@@ -4,6 +4,18 @@ import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { signJwt } from '@/lib/auth';
 
+// CORS headers
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+};
+
+// Handle OPTIONS request for CORS
+export async function OPTIONS() {
+  return NextResponse.json({}, { headers: corsHeaders });
+}
+
 // Validation schema
 const loginSchema = z.object({
   email: z.string().email('Invalid email address'),
@@ -22,7 +34,7 @@ export async function POST(request: NextRequest) {
           error: 'Validation failed',
           details: validation.error.errors,
         },
-        { status: 400 }
+        { status: 400, headers: corsHeaders }
       );
     }
 
@@ -36,7 +48,7 @@ export async function POST(request: NextRequest) {
     if (!user) {
       return NextResponse.json(
         { error: 'Invalid email or password' },
-        { status: 401 }
+        { status: 401, headers: corsHeaders }
       );
     }
 
@@ -46,7 +58,7 @@ export async function POST(request: NextRequest) {
     if (!isValidPassword) {
       return NextResponse.json(
         { error: 'Invalid email or password' },
-        { status: 401 }
+        { status: 401, headers: corsHeaders }
       );
     }
 
@@ -68,12 +80,12 @@ export async function POST(request: NextRequest) {
         createdAt: user.createdAt,
       },
       token,
-    });
+    }, { headers: corsHeaders });
   } catch (error) {
     console.error('Login error:', error);
     return NextResponse.json(
       { error: 'Internal server error' },
-      { status: 500 }
+      { status: 500, headers: corsHeaders }
     );
   }
 }

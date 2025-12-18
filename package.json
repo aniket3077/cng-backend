@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev -H 0.0.0.0",
+    "dev": "next dev -H 0.0.0.0 -p 5000",
     "build": "next build",
-    "start": "next start",
+    "start": "next start -p 5000",
     "lint": "next lint",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",

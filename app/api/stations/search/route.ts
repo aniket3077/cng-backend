@@ -7,7 +7,7 @@ const searchStationsSchema = z.object({
   query: z.string().min(1),
   lat: z.number().optional(),
   lng: z.number().optional(),
-  fuelTypes: z.array(z.enum(['Petrol', 'Diesel', 'CNG', 'LPG', 'EV'])).optional(),
+  fuelTypes: z.array(z.enum(['CNG'])).optional(),
   radiusKm: z.number().min(1).max(100).optional().default(50),
   limit: z.number().min(1).max(50).optional().default(20),
 });

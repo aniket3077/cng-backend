@@ -1,6 +1,5 @@
-// Prisma schema for Fuel Bharat - CNG/Fuel Station Finder & CRM
-// Database: SQLite (temporary - RDS unavailable)
-// Switch to PostgreSQL when RDS is available
+// Prisma schema for CNG Bharat - CNG Station Finder & CRM
+// Database: PostgreSQL (Supabase)
 
 generator client {
   provider = "prisma-client-js"
@@ -66,6 +65,8 @@ model Station {
   ownerId           String?        // StationOwner who owns this station
   approvalStatus    String         @default("pending") // pending, approved, rejected
   rejectionReason   String?        // Reason if rejected
+  cngAvailable      Float?         @default(0) // Daily CNG availability in kg
+  cngUpdatedAt      DateTime?      // Last time CNG availability was updated
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
   

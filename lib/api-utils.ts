@@ -26,12 +26,10 @@ export function getCorsHeaders(origin?: string | null): Record<string, string> {
 
 /**
  * Default CORS headers for development
- * WARNING: Do not use wildcard in production
+ * Note: Allows all origins for development
  */
 export const corsHeaders = {
-  'Access-Control-Allow-Origin': process.env.NODE_ENV === 'production' 
-    ? (process.env.ALLOWED_ORIGINS?.split(',')[0] || '')
-    : '*',
+  'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 };

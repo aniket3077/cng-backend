@@ -8,7 +8,7 @@ const suggestPumpsSchema = z.object({
   plate: z.string().optional(),
   lat: z.number(),
   lng: z.number(),
-  fuelType: z.enum(['Petrol', 'Diesel', 'CNG', 'LPG', 'EV']).optional(),
+  fuelType: z.enum(['CNG']).optional(),
   radiusKm: z.number().min(1).max(100).optional(),
   searchQuery: z.string().optional(), // Search by station name
   sortBy: z.enum(['distance', 'rating', 'name']).optional().default('distance'),

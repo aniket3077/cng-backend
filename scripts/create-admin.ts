@@ -4,7 +4,7 @@ import bcrypt from 'bcryptjs';
 const prisma = new PrismaClient();
 
 async function createAdmin() {
-  const email = 'admin@fuelbharat.com';
+  const email = 'admin@cngbharat.com';
   const password = 'Admin@123'; // Change this in production!
 
   try {
@@ -14,7 +14,16 @@ async function createAdmin() {
     });
 
     if (existingAdmin) {
-      console.log('Admin user already exists');
+      console.log('Admin user already exists - updating password...');
+      // Update password if admin exists
+      const passwordHash = await bcrypt.hash(password, 10);
+      await prisma.admin.update({
+        where: { email },
+        data: { passwordHash },
+      });
+      console.log('✅ Admin password updated successfully!');
+      console.log('Email:', email);
+      console.log('Password:', password);
       return;
     }
 

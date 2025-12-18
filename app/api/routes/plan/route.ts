@@ -15,7 +15,7 @@ const routePlanSchema = z.object({
     address: z.string().optional(),
   }),
   travelMode: z.enum(['driving', 'motorcycle', 'transit', 'walking', 'bicycling']).optional().default('driving'),
-  fuelType: z.enum(['Petrol', 'Diesel', 'CNG', 'LPG', 'EV']).optional(),
+  fuelType: z.enum(['CNG']).optional(),
   avoidTolls: z.boolean().optional().default(false),
   avoidHighways: z.boolean().optional().default(false),
 });

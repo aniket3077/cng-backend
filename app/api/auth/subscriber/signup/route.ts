@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { PrismaClient } from '@prisma/client';
 
@@ -20,7 +20,7 @@ export async function OPTIONS() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { name, email, phone, password, companyName, gstNumber, panNumber } = body;
+    const { name, email, phone, password, companyName, gstNumber, panNumber, stationName, address, city, state, lat, lng } = body;
 
     // Validation
     if (!name || !email || !phone || !password) {
@@ -59,13 +59,42 @@ export async function POST(request: NextRequest) {
         email: email.toLowerCase(),
         phone,
         passwordHash,
-        companyName: companyName || null,
+        companyName: companyName || stationName || null,
         gstNumber: gstNumber || null,
         panNumber: panNumber || null,
         status: 'pending',
-        onboardingStep: 1,
+        onboardingStep: stationName ? 2 : 1,
       },
     });
+
+    // Create station if details provided
+    let station = null;
+    if (stationName && address && city && state && lat && lng) {
+      station = await prisma.station.create({
+        data: {
+          name: stationName,
+          address,
+          city,
+          state,
+          lat: parseFloat(lat.toString()),
+          lng: parseFloat(lng.toString()),
+          fuelTypes: 'CNG',
+          ownerId: owner.id,
+          approvalStatus: 'pending',
+          isVerified: false,
+        },
+      });
+
+      // Log station creation
+      await prisma.activityLog.create({
+        data: {
+          ownerId: owner.id,
+          stationId: station.id,
+          action: 'station_created',
+          description: `Station "${stationName}" registered during signup`,
+        },
+      });
+    }
 
     // Generate JWT token
     const token = jwt.sign(
@@ -89,8 +118,10 @@ export async function POST(request: NextRequest) {
     await prisma.notification.create({
       data: {
         ownerId: owner.id,
-        title: 'Welcome to Fuel Bharat!',
-        message: 'Your account has been created successfully. Complete your profile to start adding stations.',
+        title: 'Welcome to CNG Bharat!',
+        message: station 
+          ? `Your account and station "${stationName}" have been created. Waiting for admin approval to appear on the map.`
+          : 'Your account has been created successfully. Complete your profile to start adding your CNG station.',
         type: 'success',
         category: 'general',
       },
@@ -109,6 +140,11 @@ export async function POST(request: NextRequest) {
           onboardingStep: owner.onboardingStep,
           profileComplete: owner.profileComplete,
         },
+        station: station ? {
+          id: station.id,
+          name: station.name,
+          approvalStatus: station.approvalStatus,
+        } : null,
       },
       { status: 201, headers: corsHeaders }
     );

@@ -23,8 +23,11 @@ function verifyAdminToken(request: NextRequest): string | null {
 
   const token = authHeader.substring(7);
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as { adminId: string };
-    return decoded.adminId;
+    const decoded = jwt.verify(token, JWT_SECRET) as { userId: string; role: string };
+    if (decoded.role !== 'admin') {
+      return null;
+    }
+    return decoded.userId;
   } catch (error) {
     return null;
   }

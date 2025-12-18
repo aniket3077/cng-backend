@@ -1,11 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
+import jwt from 'jsonwebtoken';
 import { prisma } from '@/lib/prisma';
-import { requireAdmin } from '@/lib/auth';
-import { corsHeaders, handleAuthError } from '@/lib/api-utils';
+import { corsHeaders } from '@/lib/api-utils';
+
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 
 export async function OPTIONS() {
   return NextResponse.json({}, { headers: corsHeaders });
+}
+
+function verifyAdminToken(request: NextRequest): string | null {
+  const authHeader = request.headers.get('authorization');
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return null;
+  }
+
+  const token = authHeader.substring(7);
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET) as { userId: string; role: string };
+    if (decoded.role !== 'admin') {
+      return null;
+    }
+    return decoded.userId;
+  } catch (error) {
+    return null;
+  }
 }
 
 const stationSchema = z.object({
@@ -51,7 +71,13 @@ const updateStationSchema = z.object({
  */
 export async function GET(request: NextRequest) {
   try {
-    const admin = requireAdmin(request);
+    const adminId = verifyAdminToken(request);
+    if (!adminId) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401, headers: corsHeaders }
+      );
+    }
 
     const { searchParams } = request.nextUrl;
     const page = parseInt(searchParams.get('page') || '1');
@@ -113,7 +139,13 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    const admin = requireAdmin(request);
+    const adminId = verifyAdminToken(request);
+    if (!adminId) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401, headers: corsHeaders }
+      );
+    }
 
     const body = await request.json();
     const validation = stationSchema.safeParse(body);
@@ -144,12 +176,12 @@ export async function POST(request: NextRequest) {
         isPartner: data.isPartner || false,
         isVerified: true, // Auto-verify admin-added stations
         subscriptionType: data.subscriptionType || 'free',
-        addedBy: admin.adminId,
+        addedBy: adminId,
       },
     });
 
     // Create subscription if not free
-    if (data.subscriptionType && data.subscriptionType !== 'free') {
+    if (data.subscriptionType && (data.subscriptionType === 'basic' || data.subscriptionType === 'premium')) {
       const durationMonths = data.subscriptionType === 'basic' ? 1 : 12;
       const amount = data.subscriptionType === 'basic' ? 999 : 9999;
       
@@ -164,7 +196,7 @@ export async function POST(request: NextRequest) {
           features: JSON.stringify({
             priority: data.subscriptionType === 'premium',
             analytics: data.subscriptionType === 'premium',
-            promotions: data.subscriptionType !== 'free',
+            promotions: true,
           }),
         },
       });
@@ -186,7 +218,13 @@ export async function POST(request: NextRequest) {
  */
 export async function PUT(request: NextRequest) {
   try {
-    const admin = requireAdmin(request);
+    const adminId = verifyAdminToken(request);
+    if (!adminId) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401, headers: corsHeaders }
+      );
+    }
 
     const body = await request.json();
     
@@ -222,7 +260,13 @@ export async function PUT(request: NextRequest) {
  */
 export async function DELETE(request: NextRequest) {
   try {
-    const admin = requireAdmin(request);
+    const adminId = verifyAdminToken(request);
+    if (!adminId) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401, headers: corsHeaders }
+      );
+    }
 
     const { searchParams } = request.nextUrl;
     const id = searchParams.get('id');

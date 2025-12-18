@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { PrismaClient } from '@prisma/client';
 
@@ -35,13 +35,14 @@ export async function POST(request: NextRequest) {
       where: { email: email.toLowerCase() },
       include: {
         stations: {
-          where: { approvalStatus: 'approved' },
           select: {
             id: true,
             name: true,
             city: true,
             state: true,
             approvalStatus: true,
+            cngAvailable: true,
+            cngUpdatedAt: true,
           },
         },
       },

@@ -6,7 +6,7 @@ import { requireAuth } from '@/lib/auth';
 // Validation schema for creating orders
 const createOrderSchema = z.object({
   stationId: z.string().optional(),
-  fuelType: z.enum(['Petrol', 'Diesel', 'CNG', 'EV']),
+  fuelType: z.enum(['CNG']),
   quantity: z.number().min(1).max(1000),
   address1: z.string().min(5),
   city: z.string().min(2),

@@ -1,11 +1,6 @@
 import jwt from 'jsonwebtoken';
 import { NextRequest } from 'next/server';
-
-const JWT_SECRET = process.env.JWT_SECRET;
-
-if (!JWT_SECRET) {
-  throw new Error('FATAL: JWT_SECRET environment variable is not set. Server cannot start without it.');
-}
+import { JWT_SECRET } from './env';
 
 export interface JWTPayload {
   userId: string;
@@ -77,6 +72,22 @@ export function requireAuth(request: NextRequest): JWTPayload {
   
   if (!payload) {
     throw new Error('Invalid or expired token');
+  }
+
+  return payload;
+}
+
+/**
+ * Middleware helper to verify admin authentication
+ * Returns admin payload if valid admin, throws error otherwise
+ * @param request - Next.js request object
+ * @returns Decoded JWT payload with admin verification
+ */
+export function requireAdmin(request: NextRequest): JWTPayload {
+  const payload = requireAuth(request);
+  
+  if (payload.role !== 'admin') {
+    throw new Error('Admin access required');
   }
 
   return payload;

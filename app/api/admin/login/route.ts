@@ -33,7 +33,10 @@ export async function POST(request: NextRequest) {
       where: { email },
     });
 
+    console.log('🔍 Login attempt:', { email, foundAdmin: !!admin });
+
     if (!admin) {
+      console.log('❌ Admin not found');
       return NextResponse.json(
         { error: 'Invalid credentials' },
         { status: 401, headers: corsHeaders }
@@ -41,8 +44,12 @@ export async function POST(request: NextRequest) {
     }
 
     // Verify password
+    console.log('🔑 Comparing password...');
     const isValidPassword = await bcrypt.compare(password, admin.passwordHash);
+    console.log('🔑 Password valid:', isValidPassword);
+    
     if (!isValidPassword) {
+      console.log('❌ Password mismatch');
       return NextResponse.json(
         { error: 'Invalid credentials' },
         { status: 401, headers: corsHeaders }

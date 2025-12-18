@@ -7,7 +7,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-producti
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 };
 
@@ -110,6 +110,8 @@ export async function POST(request: NextRequest) {
       city,
       state,
       postalCode,
+      lat,
+      lng,
     } = body;
 
     // Update owner profile
@@ -127,6 +129,55 @@ export async function POST(request: NextRequest) {
         ...(postalCode !== undefined && { postalCode }),
       },
     });
+
+    // If coordinates are provided, update or create the owner's station
+    if (lat !== undefined && lng !== undefined && address && city && state) {
+      const stations = await prisma.station.findMany({
+        where: { ownerId },
+        orderBy: { createdAt: 'asc' },
+        take: 1,
+      });
+
+      if (stations.length > 0) {
+        // Update existing station
+        await prisma.station.update({
+          where: { id: stations[0].id },
+          data: {
+            lat: parseFloat(lat),
+            lng: parseFloat(lng),
+            address,
+            city,
+            state,
+          },
+        });
+      } else {
+        // Create new station if none exists
+        const stationName = companyName || `${name}'s Station`;
+        await prisma.station.create({
+          data: {
+            name: stationName,
+            address,
+            city,
+            state,
+            lat: parseFloat(lat),
+            lng: parseFloat(lng),
+            fuelTypes: 'CNG',
+            ownerId,
+            approvalStatus: 'pending',
+            isVerified: false,
+          },
+        });
+
+        // Log station creation
+        await prisma.activityLog.create({
+          data: {
+            ownerId,
+            action: 'station_created',
+            description: `Station "${stationName}" created via profile update`,
+          },
+        });
+      }
+    }
 
     // Check if profile is complete
     const isComplete = !!(
@@ -170,4 +221,9 @@ export async function POST(request: NextRequest) {
       { status: 500, headers: corsHeaders }
     );
   }
+}
+
+// PUT - Update owner profile (alias for POST)
+export async function PUT(request: NextRequest) {
+  return POST(request);
 }
