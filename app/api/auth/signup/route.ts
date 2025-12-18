@@ -4,18 +4,6 @@ import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { signJwt } from '@/lib/auth';
 
-// CORS headers
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-};
-
-// Handle OPTIONS request for CORS
-export async function OPTIONS() {
-  return NextResponse.json({}, { headers: corsHeaders });
-}
-
 // Validation schema
 const signupSchema = z.object({
   email: z.string().email('Invalid email address'),
@@ -36,7 +24,7 @@ export async function POST(request: NextRequest) {
           error: 'Validation failed',
           details: validation.error.errors,
         },
-        { status: 400, headers: corsHeaders }
+        { status: 400 }
       );
     }
 
@@ -50,7 +38,7 @@ export async function POST(request: NextRequest) {
     if (existingUser) {
       return NextResponse.json(
         { error: 'User with this email already exists' },
-        { status: 409, headers: corsHeaders }
+        { status: 409 }
       );
     }
 
@@ -89,13 +77,13 @@ export async function POST(request: NextRequest) {
         user,
         token,
       },
-      { status: 201, headers: corsHeaders }
+      { status: 201 }
     );
   } catch (error) {
     console.error('Signup error:', error);
     return NextResponse.json(
       { error: 'Internal server error' },
-      { status: 500, headers: corsHeaders }
+      { status: 500 }
     );
   }
 }

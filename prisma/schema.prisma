@@ -1,13 +1,14 @@
 // Prisma schema for CNG Bharat - CNG Station Finder & CRM
-// Database: PostgreSQL (Supabase)
+// Database: PostgreSQL (Vercel Postgres / Neon / Supabase)
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL") // Required for Neon/Vercel Postgres
 }
 
 // User model - handles authentication and profile

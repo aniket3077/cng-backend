@@ -16,15 +16,13 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const lat = searchParams.get('lat');
     const lng = searchParams.get('lng');
-    const radius = parseFloat(searchParams.get('radius') || '50');
+    const radius = parseFloat(searchParams.get('radius') || '10');
     const city = searchParams.get('city');
     const state = searchParams.get('state');
     const fuelType = searchParams.get('fuelType');
 
     // Build where clause
-    const where: any = {
-      approvalStatus: 'approved', // Only show approved stations
-    };
+    const where: any = {};
 
     if (city) {
       where.city = { contains: city, mode: 'insensitive' };
@@ -59,28 +57,11 @@ export async function GET(request: NextRequest) {
 
     const stations = await prisma.station.findMany({
       where,
-      select: {
-        id: true,
-        name: true,
-        address: true,
-        city: true,
-        state: true,
-        postalCode: true,
-        lat: true,
-        lng: true,
-        fuelTypes: true,
-        phone: true,
-        openingHours: true,
-        approvalStatus: true,
-        cngAvailable: true,
-        cngUpdatedAt: true,
-        ownerId: true,
-      },
       orderBy: [
-        { cngAvailable: 'desc' }, // Stations with CNG first
-        { createdAt: 'desc' },
+        { isPartner: 'desc' }, // Partners first
+        { rating: 'desc' }, // Then by rating
       ],
-      take: 100, // Show up to 100 stations
+      take: 50, // Limit results
     });
 
     return NextResponse.json({
