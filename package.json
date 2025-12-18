@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "next dev -H 0.0.0.0 -p 5000",
-    "build": "next build",
+    "build": "prisma generate && next build",
+    "postinstall": "prisma generate",
     "start": "next start -p 5000",
     "lint": "next lint",
     "db:generate": "prisma generate",
