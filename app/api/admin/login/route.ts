@@ -4,10 +4,11 @@ import bcrypt from 'bcryptjs';
 import { prisma } from '@/lib/prisma';
 import { signJwt } from '@/lib/auth';
 import { corsHeaders } from '@/lib/api-utils';
+import { rateLimit, rateLimitConfigs } from '@/lib/rate-limit';
 
 const loginSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(6),
+  email: z.string().email().trim().toLowerCase(),
+  password: z.string().min(6).max(100),
 });
 
 export async function OPTIONS() {
@@ -15,6 +16,12 @@ export async function OPTIONS() {
 }
 
 export async function POST(request: NextRequest) {
+  // Apply rate limiting
+  const rateLimitResponse = rateLimit(request, rateLimitConfigs.auth);
+  if (rateLimitResponse) {
+    return rateLimitResponse;
+  }
+
   try {
     const body = await request.json();
     const validation = loginSchema.safeParse(body);
@@ -33,10 +40,7 @@ export async function POST(request: NextRequest) {
       where: { email },
     });
 
-    console.log('🔍 Login attempt:', { email, foundAdmin: !!admin });
-
     if (!admin) {
-      console.log('❌ Admin not found');
       return NextResponse.json(
         { error: 'Invalid credentials' },
         { status: 401, headers: corsHeaders }
@@ -44,12 +48,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Verify password
-    console.log('🔑 Comparing password...');
     const isValidPassword = await bcrypt.compare(password, admin.passwordHash);
-    console.log('🔑 Password valid:', isValidPassword);
     
     if (!isValidPassword) {
-      console.log('❌ Password mismatch');
       return NextResponse.json(
         { error: 'Invalid credentials' },
         { status: 401, headers: corsHeaders }
@@ -74,7 +75,6 @@ export async function POST(request: NextRequest) {
       },
     }, { headers: corsHeaders });
   } catch (error) {
-    console.error('Admin login error:', error);
     return NextResponse.json(
       { error: 'Login failed' },
       { status: 500, headers: corsHeaders }

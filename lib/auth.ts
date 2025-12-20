@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
 import { NextRequest } from 'next/server';
 import { JWT_SECRET } from './env';
+import { isTokenBlacklisted } from './token-blacklist';
 
 export interface JWTPayload {
   userId: string;
@@ -25,11 +26,15 @@ export function signJwt(payload: JWTPayload): string {
  * @returns Decoded payload or null if invalid
  */
 export function verifyJwt(token: string): JWTPayload | null {
+  // Check if token is blacklisted
+  if (isTokenBlacklisted(token)) {
+    return null;
+  }
+
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as JWTPayload;
     return decoded;
   } catch (error) {
-    console.error('JWT verification failed:', error);
     return null;
   }
 }

@@ -99,10 +99,19 @@ export async function PUT(request: NextRequest) {
     }
 
     // Update CNG availability
+    const cngAvailableBool =
+      typeof cngAvailable === 'boolean'
+        ? cngAvailable
+        : typeof cngAvailable === 'number'
+          ? cngAvailable !== 0
+          : typeof cngAvailable === 'string'
+            ? ['true', '1', 'yes', 'y'].includes(cngAvailable.trim().toLowerCase())
+            : Boolean(cngAvailable);
+
     const updated = await prisma.station.update({
       where: { id: stationId },
       data: {
-        cngAvailable: parseFloat(cngAvailable),
+        cngAvailable: cngAvailableBool,
         cngUpdatedAt: new Date(),
       },
     });

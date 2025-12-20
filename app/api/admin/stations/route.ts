@@ -1,31 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import jwt from 'jsonwebtoken';
 import { prisma } from '@/lib/prisma';
 import { corsHeaders } from '@/lib/api-utils';
-
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+import { extractToken, verifyJwt } from '@/lib/auth';
 
 export async function OPTIONS() {
   return NextResponse.json({}, { headers: corsHeaders });
 }
 
 function verifyAdminToken(request: NextRequest): string | null {
-  const authHeader = request.headers.get('authorization');
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  const token = extractToken(request);
+  if (!token) {
     return null;
   }
 
-  const token = authHeader.substring(7);
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET) as { userId: string; role: string };
-    if (decoded.role !== 'admin') {
-      return null;
-    }
-    return decoded.userId;
-  } catch (error) {
+  const decoded = verifyJwt(token);
+  if (!decoded || decoded.role !== 'admin') {
     return null;
   }
+  return decoded.userId;
 }
 
 const stationSchema = z.object({
@@ -62,7 +55,6 @@ const updateStationSchema = z.object({
   isVerified: z.boolean().optional(),
   subscriptionType: z.enum(['free', 'basic', 'premium']).optional(),
   approvalStatus: z.enum(['pending', 'approved', 'rejected']).optional(),
-  rejectionReason: z.string().optional(),
 });
 
 /**
@@ -80,8 +72,8 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = request.nextUrl;
-    const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '20');
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1'));
+    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '20'))); // Max 100 items per page
     const search = searchParams.get('search') || '';
     const status = searchParams.get('status') || '';
 
@@ -176,7 +168,6 @@ export async function POST(request: NextRequest) {
         isPartner: data.isPartner || false,
         isVerified: true, // Auto-verify admin-added stations
         subscriptionType: data.subscriptionType || 'free',
-        addedBy: adminId,
       },
     });
 

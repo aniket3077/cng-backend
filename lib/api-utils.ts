@@ -7,6 +7,7 @@ import { NextResponse } from 'next/server';
 const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS?.split(',') || [
   'http://localhost:5173', // Vite dev server (admin-web)
   'http://localhost:3000', // Next.js
+  'exp://10.202.200.65:8081', // Expo mobile app
 ];
 
 /**

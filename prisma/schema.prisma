@@ -1,40 +1,33 @@
-// Prisma schema for CNG Bharat - CNG Station Finder & CRM
-// Database: PostgreSQL (Vercel Postgres / Neon / Supabase)
-
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL") // Required for Neon/Vercel Postgres
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
-// User model - handles authentication and profile
 model User {
-  id           String      @id @default(cuid())
-  email        String      @unique
+  id           String    @id @default(cuid())
+  email        String    @unique
   passwordHash String
   name         String
   phone        String?
-  role         String      @default("customer") // customer, partner, admin
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
-  
+  role         String    @default("customer")
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
   vehicles     Vehicle[]
-  orders       FuelOrder[]
-  
+
   @@index([email])
 }
 
-// Vehicle model - stores user vehicle details with plate info
 model Vehicle {
   id         String   @id @default(cuid())
   userId     String
-  plate      String   // Full plate number (e.g., MH12AB1234)
-  plateHash  String?  // Optional hash for privacy
-  regionCode String?  // Extracted region (e.g., MH, DL, KA)
+  plate      String
+  plateHash  String?
+  regionCode String?
   createdAt  DateTime @default(now())
   
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -43,41 +36,36 @@ model Vehicle {
   @@index([plate])
 }
 
-// Station model - petrol pump/fuel station information
 model Station {
-  id                String         @id @default(cuid())
-  name              String
-  address           String
-  city              String
-  state             String
-  postalCode        String?
-  lat               Float          // Latitude for geolocation
-  lng               Float          // Longitude for geolocation
-  fuelTypes         String         // Comma-separated: "Petrol,Diesel,CNG"
-  isPartner         Boolean        @default(false) // Partner stations get priority
-  rating            Float          @default(4.0) // Average rating (0-5)
-  phone             String?        // Contact number
-  openingHours      String?        // e.g., "24/7" or "6AM-10PM"
-  amenities         String?        // Comma-separated: "Restroom,ATM,Air"
-  isVerified        Boolean        @default(false) // Admin verified
-  subscriptionType  String?        // "free", "basic", "premium"
-  subscriptionEnd   DateTime?      // Subscription expiry
-  addedBy           String?        // Admin user who added
-  ownerId           String?        // StationOwner who owns this station
-  approvalStatus    String         @default("pending") // pending, approved, rejected
-  rejectionReason   String?        // Reason if rejected
-  cngAvailable      Float?         @default(0) // Daily CNG availability in kg
-  cngUpdatedAt      DateTime?      // Last time CNG availability was updated
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
+  id               String          @id @default(cuid())
+  name             String
+  address          String
+  city             String
+  state            String
+  postalCode       String?
+  lat              Float
+  lng              Float
+  fuelTypes        String
+  isPartner        Boolean         @default(false)
+  phone            String?
+  openingHours     String?
+  amenities        String?
+  isVerified       Boolean         @default(false)
+  subscriptionType String?
+  cngAvailable     Boolean         @default(true)
+  cngQuantityKg    Float?          @default(0)
+  cngUpdatedAt     DateTime?
+  ownerId          String?
+  approvalStatus   String          @default("pending")
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
   
-  owner             StationOwner?  @relation(fields: [ownerId], references: [id], onDelete: SetNull)
-  orders            FuelOrder[]
-  subscriptions     Subscription[]
-  supportTickets    SupportTicket[]
-  documents         StationDocument[]
+  owner            StationOwner?   @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+  subscriptions    Subscription[]
+  supportTickets   SupportTicket[]
+  documents        StationDocument[]
   
-  @@index([lat, lng]) // For geospatial queries
+  @@index([lat, lng])
   @@index([city, state])
   @@index([isPartner])
   @@index([isVerified])
@@ -85,81 +73,27 @@ model Station {
   @@index([approvalStatus])
 }
 
-// FuelOrder model - main order entity
-model FuelOrder {
-  id          String    @id @default(cuid())
-  userId      String
-  stationId   String?   // Optional - can be null if station not yet selected
-  fuelType    String    // Petrol, Diesel, CNG
-  quantity    Float     // Liters
-  address1    String    // Delivery/pickup address
-  city        String
-  state       String
-  postalCode  String?
-  lat         Float?    // User location at order time
-  lng         Float?
-  scheduledAt DateTime? // When user wants the service
-  status      String    @default("pending") // pending, confirmed, completed, cancelled
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  station     Station?  @relation(fields: [stationId], references: [id], onDelete: SetNull)
-  
-  @@index([userId])
-  @@index([stationId])
-  @@index([status])
-  @@index([createdAt])
-}
-
-// Lead model - Enhanced for better CRM
-model Lead {
-  id                 String    @id @default(cuid())
-  leadSource         String    @default("website") // website, referral, campaign, cold_call
-  companyName        String
-  contactPerson      String
-  email              String
-  phone              String
-  city               String?
-  state              String?
-  message            String?
-  status             String    @default("new") // new, contacted, qualified, converted, lost
-  assignedTo         String?   // Admin ID
-  followUpDate       DateTime?
-  convertedToOwnerId String?   // If converted to station owner
-  notes              String?   // Admin notes
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
-  
-  @@index([email])
-  @@index([status])
-  @@index([assignedTo])
-  @@index([leadSource])
-}
-
-// Admin model - for admin panel authentication
 model Admin {
   id           String   @id @default(cuid())
   email        String   @unique
   passwordHash String
   name         String
-  role         String   @default("admin") // admin, superadmin
+  role         String   @default("admin")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
-  
+
   @@index([email])
 }
 
-// Subscription model - station subscription plans
 model Subscription {
   id          String    @id @default(cuid())
   stationId   String
-  planType    String    // "free", "basic", "premium"
+  planType    String
   startDate   DateTime  @default(now())
   endDate     DateTime
   amount      Float     @default(0)
-  status      String    @default("active") // active, expired, cancelled
-  features    String?   // JSON string of features
+  status      String    @default("active")
+  features    String?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   
@@ -169,81 +103,84 @@ model Subscription {
   @@index([status])
   @@index([endDate])
 }
-// StationOwner model - Station owners/subscribers who register their stations
+
 model StationOwner {
-  id                String          @id @default(cuid())
-  email             String          @unique
-  passwordHash      String
-  name              String
-  phone             String
-  companyName       String?         // Business/Company name
-  gstNumber         String?         // GST registration number
-  panNumber         String?         // PAN card number
-  address           String?
-  city              String?
-  state             String?
-  postalCode        String?
-  status            String          @default("pending") // pending, active, suspended, rejected
-  emailVerified     Boolean         @default(false)
-  phoneVerified     Boolean         @default(false)
-  kycStatus         String          @default("pending") // pending, verified, rejected
+  id                 String         @id @default(cuid())
+  email              String         @unique
+  passwordHash       String
+  name               String
+  phone              String
+  companyName        String?
+  gstNumber          String?
+  panNumber          String?
+  address            String?
+  city               String?
+  state              String?
+  postalCode         String?
+  status             String         @default("pending")
+  emailVerified      Boolean        @default(false)
+  phoneVerified      Boolean        @default(false)
+  kycStatus          String         @default("pending")
   kycRejectionReason String?
-  profileComplete   Boolean         @default(false)
-  onboardingStep    Int             @default(1) // Track onboarding progress
-  lastLoginAt       DateTime?
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
+  profileComplete    Boolean        @default(false)
+  onboardingStep     Int            @default(1)
+  lastLoginAt        DateTime?
+  subscriptionType   String?
+  subscriptionEndsAt DateTime?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
   
-  stations          Station[]
-  supportTickets    SupportTicket[]
-  notifications     Notification[]
-  activityLogs      ActivityLog[]
+  stations           Station[]
+  supportTickets     SupportTicket[]
+  notifications      Notification[]
+  activityLogs       ActivityLog[]
+  paymentHistory     PaymentHistory[]
   
   @@index([email])
   @@index([status])
   @@index([kycStatus])
+  @@index([subscriptionType])
+  @@index([subscriptionEndsAt])
 }
 
-// StationDocument model - Store KYC and station documents
 model StationDocument {
-  id            String   @id @default(cuid())
-  stationId     String
-  documentType  String   // "license", "gst_certificate", "pan_card", "photos", "ownership_proof"
-  fileUrl       String   // Path or URL to document
-  fileName      String
-  fileSize      Int?     // Size in bytes
-  uploadedAt    DateTime @default(now())
-  verifiedAt    DateTime?
-  verifiedBy    String?  // Admin ID who verified
-  status        String   @default("pending") // pending, verified, rejected
+  id              String    @id @default(cuid())
+  stationId       String
+  documentType    String
+  fileUrl         String
+  fileName        String
+  fileSize        Int?
+  uploadedAt      DateTime  @default(now())
+  verifiedAt      DateTime?
+  verifiedBy      String?
+  status          String    @default("pending")
   rejectionReason String?
   
-  station       Station  @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  station         Station   @relation(fields: [stationId], references: [id], onDelete: Cascade)
   
   @@index([stationId])
   @@index([status])
 }
 
-// SupportTicket model - Customer support and CRM
 model SupportTicket {
-  id            String    @id @default(cuid())
-  ticketNumber  String    @unique // Auto-generated: FBT-YYYYMMDD-XXXX
-  subject       String
-  description   String
-  category      String    // "technical", "billing", "station_issue", "general"
-  priority      String    @default("medium") // low, medium, high, urgent
-  status        String    @default("open") // open, in_progress, resolved, closed
-  ownerId       String?   // Station owner who created ticket
-  stationId     String?   // Related station if applicable
-  assignedTo    String?   // Admin ID
-  resolution    String?
-  resolvedAt    DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id           String        @id @default(cuid())
+  ticketNumber String        @unique
+  subject      String
+  description  String
+  category     String
+  priority     String        @default("medium")
+  status       String        @default("open")
+  ownerId      String?
+  stationId    String?
+  assignedTo   String?
+  resolution   String?
+  resolvedAt   DateTime?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
   
-  owner         StationOwner? @relation(fields: [ownerId], references: [id], onDelete: SetNull)
-  station       Station?  @relation(fields: [stationId], references: [id], onDelete: SetNull)
-  replies       TicketReply[]
+  owner        StationOwner? @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+  station      Station?      @relation(fields: [stationId], references: [id], onDelete: SetNull)
+  replies      TicketReply[]
   
   @@index([ownerId])
   @@index([stationId])
@@ -252,55 +189,52 @@ model SupportTicket {
   @@index([ticketNumber])
 }
 
-// TicketReply model - Replies to support tickets
 model TicketReply {
-  id          String        @id @default(cuid())
-  ticketId    String
-  message     String
-  isInternal  Boolean       @default(false) // Internal note for admins
-  attachments String?       // JSON array of file URLs
-  createdBy   String        // User/Admin/Owner ID
-  createdByType String      // "admin", "owner"
-  createdAt   DateTime      @default(now())
+  id            String        @id @default(cuid())
+  ticketId      String
+  message       String
+  isInternal    Boolean       @default(false)
+  attachments   String?
+  createdBy     String
+  createdByType String
+  createdAt     DateTime      @default(now())
   
-  ticket      SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  ticket        SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
   
   @@index([ticketId])
   @@index([createdAt])
 }
 
-// Notification model - Push notifications and alerts
 model Notification {
-  id          String        @id @default(cuid())
-  ownerId     String
-  title       String
-  message     String
-  type        String        // "info", "warning", "success", "error"
-  category    String?       // "station_approval", "subscription", "support", "general"
-  isRead      Boolean       @default(false)
-  actionUrl   String?       // Deep link or URL
-  metadata    String?       // JSON data
-  createdAt   DateTime      @default(now())
-  readAt      DateTime?
+  id        String       @id @default(cuid())
+  ownerId   String
+  title     String
+  message   String
+  type      String
+  category  String?
+  isRead    Boolean      @default(false)
+  actionUrl String?
+  metadata  String?
+  createdAt DateTime     @default(now())
+  readAt    DateTime?
   
-  owner       StationOwner  @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  owner     StationOwner @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   
   @@index([ownerId])
   @@index([isRead])
   @@index([createdAt])
 }
 
-// ActivityLog model - Track all user activities for CRM
 model ActivityLog {
   id          String        @id @default(cuid())
   ownerId     String?
   adminId     String?
   stationId   String?
-  action      String        // "login", "station_created", "profile_updated", etc.
+  action      String
   description String?
   ipAddress   String?
   userAgent   String?
-  metadata    String?       // JSON data
+  metadata    String?
   createdAt   DateTime      @default(now())
   
   owner       StationOwner? @relation(fields: [ownerId], references: [id], onDelete: SetNull)
@@ -312,14 +246,26 @@ model ActivityLog {
   @@index([createdAt])
 }
 
-// Analytics model - Store analytics data for dashboard
-model Analytics {
-  id              String   @id @default(cuid())
-  date            DateTime @default(now())
-  metric          String   // "daily_signups", "station_registrations", "active_stations", etc.
-  value           Float
-  metadata        String?  // JSON data for additional details
+model PaymentHistory {
+  id                    String    @id @default(cuid())
+  ownerId               String
+  razorpayOrderId       String    @unique
+  razorpayPaymentId     String?
+  razorpaySignature     String?
+  planId                String
+  planName              String
+  amount                Float
+  currency              String    @default("INR")
+  status                String    @default("pending")
+  subscriptionStartsAt  DateTime?
+  subscriptionEndsAt    DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
   
-  @@index([date])
-  @@index([metric])
+  owner                 StationOwner @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  
+  @@index([ownerId])
+  @@index([razorpayOrderId])
+  @@index([status])
+  @@index([createdAt])
 }

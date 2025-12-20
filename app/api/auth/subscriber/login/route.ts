@@ -1,34 +1,39 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/prisma';
+import { signJwt } from '@/lib/auth';
+import { corsHeaders } from '@/lib/api-utils';
+import { rateLimit, rateLimitConfigs } from '@/lib/rate-limit';
 
-const prisma = new PrismaClient();
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
-
-// CORS headers
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-};
+const loginSchema = z.object({
+  email: z.string().email().trim().toLowerCase(),
+  password: z.string().min(6).max(100),
+});
 
 export async function OPTIONS() {
   return NextResponse.json({}, { headers: corsHeaders });
 }
 
 export async function POST(request: NextRequest) {
+  // Apply rate limiting
+  const rateLimitResponse = rateLimit(request, rateLimitConfigs.auth);
+  if (rateLimitResponse) {
+    return rateLimitResponse;
+  }
+
   try {
     const body = await request.json();
-    const { email, password } = body;
+    const validation = loginSchema.safeParse(body);
 
-    // Validation
-    if (!email || !password) {
+    if (!validation.success) {
       return NextResponse.json(
-        { error: 'Email and password are required' },
+        { error: 'Invalid input', details: validation.error.errors },
         { status: 400, headers: corsHeaders }
       );
     }
+
+    const { email, password } = validation.data;
 
     // Find station owner
     const owner = await prisma.stationOwner.findUnique({
@@ -41,8 +46,6 @@ export async function POST(request: NextRequest) {
             city: true,
             state: true,
             approvalStatus: true,
-            cngAvailable: true,
-            cngUpdatedAt: true,
           },
         },
       },
@@ -52,14 +55,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: 'Invalid email or password' },
         { status: 401, headers: corsHeaders }
-      );
-    }
-
-    // Check if account is suspended
-    if (owner.status === 'suspended') {
-      return NextResponse.json(
-        { error: 'Your account has been suspended. Please contact support.' },
-        { status: 403, headers: corsHeaders }
       );
     }
 
@@ -73,10 +68,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Generate JWT token
-    const token = jwt.sign(
-      { ownerId: owner.id, email: owner.email, type: 'owner' },
-      JWT_SECRET,
-      { expiresIn: '30d' }
+    const token = signJwt(
+      { userId: owner.id, email: owner.email, role: 'owner' }
     );
 
     // Update last login
@@ -106,10 +99,6 @@ export async function POST(request: NextRequest) {
           email: owner.email,
           phone: owner.phone,
           companyName: owner.companyName,
-          status: owner.status,
-          emailVerified: owner.emailVerified,
-          phoneVerified: owner.phoneVerified,
-          kycStatus: owner.kycStatus,
           profileComplete: owner.profileComplete,
           onboardingStep: owner.onboardingStep,
           stations: owner.stations,

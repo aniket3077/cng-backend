@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import crypto from 'crypto';
+import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
@@ -185,68 +186,64 @@ async function main() {
   await prisma.supportTicket.deleteMany({});
   await prisma.subscription.deleteMany({});
   await prisma.stationDocument.deleteMany({});
-  await prisma.fuelOrder.deleteMany({});
+  // await prisma.fuelOrder.deleteMany({});  // Model removed
   await prisma.station.deleteMany({});
   await prisma.notification.deleteMany({});
   await prisma.activityLog.deleteMany({});
-  await prisma.vehicle.deleteMany({});
+  // await prisma.vehicle.deleteMany({});  // Model removed
   await prisma.admin.deleteMany({});
   await prisma.stationOwner.deleteMany({});
-  await prisma.user.deleteMany({});
+  // await prisma.user.deleteMany({});  // Model removed
 
   // Create demo admin
   console.log('Creating demo admin...');
+  const adminPasswordHash = await bcrypt.hash('Admin@123', 10);
   const admin = await prisma.admin.create({
     data: {
       email: 'admin@fuely.in',
       name: 'Fuely Admin',
       role: 'admin',
-      passwordHash: crypto.createHash('sha256').update('Admin@123').digest('hex'),
+      passwordHash: adminPasswordHash,
     },
   });
 
   // Create demo users
-  console.log('Creating demo users...');
-  const user1 = await prisma.user.create({
-    data: {
-      email: 'user1@example.com',
-      name: 'Aarav Mehta',
-      passwordHash: crypto.createHash('sha256').update('User@123').digest('hex'),
-      phone: '9876543210',
-      role: 'customer',
-      vehicles: {
-        create: [{ plate: 'MH12AB1234', regionCode: 'MH' }],
-      },
-    },
-  });
-  const user2 = await prisma.user.create({
-    data: {
-      email: 'user2@example.com',
-      name: 'Diya Kapoor',
-      passwordHash: crypto.createHash('sha256').update('User@123').digest('hex'),
-      phone: '9876501234',
-      role: 'customer',
-      vehicles: {
-        create: [{ plate: 'DL03CD5678', regionCode: 'DL' }],
-      },
-    },
-  });
+  // console.log('Creating demo users...');
+  // const user1 = await prisma.user.create({
+  //   data: {
+  //     email: 'user1@example.com',
+  //     name: 'Aarav Mehta',
+  //     passwordHash: crypto.createHash('sha256').update('User@123').digest('hex'),
+  //     phone: '9876543210',
+  //     role: 'customer',
+  //     vehicles: {
+  //       create: [{ plate: 'MH12AB1234', regionCode: 'MH' }],
+  //     },
+  //   },
+  // });
+  // const user2 = await prisma.user.create({
+  //   data: {
+  //     email: 'user2@example.com',
+  //     name: 'Diya Kapoor',
+  //     passwordHash: crypto.createHash('sha256').update('User@123').digest('hex'),
+  //     phone: '9876501234',
+  //     role: 'customer',
+  //     vehicles: {
+  //       create: [{ plate: 'DL03CD5678', regionCode: 'DL' }],
+  //     },
+  //   },
+  // });
 
   // Create demo station owners
   console.log('Creating demo station owners...');
+  const ownerPasswordHash = await bcrypt.hash('Owner@123', 10);
   const owner1 = await prisma.stationOwner.create({
     data: {
       email: 'owner1@fuely.in',
       name: 'Rohan Sharma',
       phone: '9811111111',
-      passwordHash: crypto.createHash('sha256').update('Owner@123').digest('hex'),
+      passwordHash: ownerPasswordHash,
       companyName: 'Sharma Fuels Pvt Ltd',
-      status: 'active',
-      emailVerified: true,
-      phoneVerified: true,
-      kycStatus: 'verified',
-      profileComplete: true,
-      onboardingStep: 3,
     },
   });
   const owner2 = await prisma.stationOwner.create({
@@ -254,24 +251,19 @@ async function main() {
       email: 'owner2@fuely.in',
       name: 'Neha Singh',
       phone: '9822222222',
-      passwordHash: crypto.createHash('sha256').update('Owner@123').digest('hex'),
+      passwordHash: ownerPasswordHash,
       companyName: 'Singh Energy Corp',
-      status: 'pending',
-      emailVerified: false,
-      phoneVerified: false,
-      kycStatus: 'pending',
-      profileComplete: false,
-      onboardingStep: 1,
     },
   });
 
   // Insert stations
   console.log('Creating stations...');
   for (const station of stations) {
+    const { fuelTypes, rating: _rating, ...stationData } = station as any;
     await prisma.station.create({
       data: {
-        ...station,
-        fuelTypes: station.fuelTypes.join(','),
+        ...stationData,
+        fuelTypes: fuelTypes.join(','),
         owner: station.isPartner ? { connect: { id: owner1.id } } : undefined,
       },
     });
@@ -335,29 +327,29 @@ async function main() {
   });
 
   // Create sample orders
-  console.log('Creating demo orders...');
-  if (firstStation) {
-    await prisma.fuelOrder.create({
-      data: {
-        userId: user1.id,
-        stationId: firstStation.id,
-        fuelType: 'CNG',
-        quantity: 10,
-        address1: 'Bandra West',
-        city: 'Mumbai',
-        state: 'Maharashtra',
-        status: 'confirmed',
-      },
-    });
-  }
+  // console.log('Creating demo orders...');
+  // if (firstStation) {
+  //   await prisma.fuelOrder.create({
+  //     data: {
+  //       userId: user1.id,
+  //       stationId: firstStation.id,
+  //       fuelType: 'CNG',
+  //       quantity: 10,
+  //       address1: 'Bandra West',
+  //       city: 'Mumbai',
+  //       state: 'Maharashtra',
+  //       status: 'confirmed',
+  //     },
+  //   });
+  // }
 
   // Get count
   const count = await prisma.station.count();
   console.log(`📊 Total stations in database: ${count}`);
   const ownersCount = await prisma.stationOwner.count();
-  const usersCount = await prisma.user.count();
+  // const usersCount = await prisma.user.count();  // Model removed
   const ticketsCount = await prisma.supportTicket.count();
-  console.log(`👤 Users: ${usersCount}, 👔 Owners: ${ownersCount}, 🎫 Tickets: ${ticketsCount}`);
+  console.log(`👔 Owners: ${ownersCount}, 🎫 Tickets: ${ticketsCount}`);
 }
 
 main()

@@ -73,7 +73,6 @@ export async function POST(request: NextRequest) {
       take: limit * 2, // Fetch more to filter by distance
       orderBy: [
         { isPartner: 'desc' }, // Partner stations first
-        { rating: 'desc' },
       ],
     });
 
@@ -93,7 +92,7 @@ export async function POST(request: NextRequest) {
         lng: station.lng,
         fuelTypes: station.fuelTypes,
         isPartner: station.isPartner,
-        rating: station.rating,
+        rating: 0,
         distance: distance ? parseFloat(distance.toFixed(2)) : null,
       };
     });

@@ -1,34 +1,50 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/prisma';
+import { signJwt } from '@/lib/auth';
+import { corsHeaders } from '@/lib/api-utils';
+import { rateLimit, rateLimitConfigs } from '@/lib/rate-limit';
 
-const prisma = new PrismaClient();
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
-
-// CORS headers
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-};
+const signupSchema = z.object({
+  name: z.string().min(2).max(100).trim(),
+  email: z.string().email().trim().toLowerCase(),
+  phone: z.string().min(10).max(20).regex(/^[0-9+\-\s()]+$/, 'Invalid phone number'),
+  password: z.string().min(6, 'Password must be at least 6 characters').max(100),
+  companyName: z.string().max(200).trim().optional(),
+  gstNumber: z.string().optional(),
+  panNumber: z.string().optional(),
+  stationName: z.string().max(200).trim().optional(),
+  address: z.string().max(500).trim().optional(),
+  city: z.string().max(100).trim().optional(),
+  state: z.string().max(100).trim().optional(),
+  lat: z.number().min(-90).max(90).optional(),
+  lng: z.number().min(-180).max(180).optional(),
+});
 
 export async function OPTIONS() {
   return NextResponse.json({}, { headers: corsHeaders });
 }
 
 export async function POST(request: NextRequest) {
+  // Apply rate limiting
+  const rateLimitResponse = rateLimit(request, rateLimitConfigs.auth);
+  if (rateLimitResponse) {
+    return rateLimitResponse;
+  }
+
   try {
     const body = await request.json();
-    const { name, email, phone, password, companyName, gstNumber, panNumber, stationName, address, city, state, lat, lng } = body;
+    const validation = signupSchema.safeParse(body);
 
-    // Validation
-    if (!name || !email || !phone || !password) {
+    if (!validation.success) {
       return NextResponse.json(
-        { error: 'Name, email, phone, and password are required' },
+        { error: 'Invalid input', details: validation.error.errors },
         { status: 400, headers: corsHeaders }
       );
     }
+
+    const { name, email, phone, password, companyName, gstNumber, panNumber, stationName, address, city, state, lat, lng } = validation.data;
 
     if (password.length < 6) {
       return NextResponse.json(
@@ -62,7 +78,6 @@ export async function POST(request: NextRequest) {
         companyName: companyName || stationName || null,
         gstNumber: gstNumber || null,
         panNumber: panNumber || null,
-        status: 'pending',
         onboardingStep: stationName ? 2 : 1,
       },
     });
@@ -97,10 +112,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Generate JWT token
-    const token = jwt.sign(
-      { ownerId: owner.id, email: owner.email, type: 'owner' },
-      JWT_SECRET,
-      { expiresIn: '30d' }
+    const token = signJwt(
+      { userId: owner.id, email: owner.email, role: 'owner' }
     );
 
     // Log activity
@@ -136,7 +149,6 @@ export async function POST(request: NextRequest) {
           name: owner.name,
           email: owner.email,
           phone: owner.phone,
-          status: owner.status,
           onboardingStep: owner.onboardingStep,
           profileComplete: owner.profileComplete,
         },

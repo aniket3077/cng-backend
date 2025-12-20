@@ -1,5 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { corsHeaders } from '@/lib/api-utils';
+
+/**
+ * Calculate distance between two coordinates using Haversine formula
+ */
+function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371; // Earth's radius in km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
 
 /**
  * GET /api/stations
@@ -16,13 +32,20 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const lat = searchParams.get('lat');
     const lng = searchParams.get('lng');
-    const radius = parseFloat(searchParams.get('radius') || '10');
+    const radius = Math.min(100, Math.max(1, parseFloat(searchParams.get('radius') || '10'))); // Max 100km radius
     const city = searchParams.get('city');
     const state = searchParams.get('state');
     const fuelType = searchParams.get('fuelType');
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1'));
+    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '50'))); // Max 100 items
+
+    const skip = (page - 1) * limit;
 
     // Build where clause
-    const where: any = {};
+    const where: any = {
+      approvalStatus: 'approved', // Only show approved stations
+      isVerified: true, // Only show verified stations
+    };
 
     if (city) {
       where.city = { contains: city, mode: 'insensitive' };
@@ -59,21 +82,54 @@ export async function GET(request: NextRequest) {
       where,
       orderBy: [
         { isPartner: 'desc' }, // Partners first
-        { rating: 'desc' }, // Then by rating
+        { createdAt: 'desc' }, // Then by creation date
       ],
-      take: 50, // Limit results
+      skip,
+      take: limit,
+      include: {
+        owner: {
+          select: {
+            name: true,
+            companyName: true,
+            phone: true,
+            email: true,
+          },
+        },
+      },
     });
+
+    // Calculate distance if lat/lng provided
+    let stationsWithDistance = stations;
+    if (lat && lng) {
+      const latNum = parseFloat(lat);
+      const lngNum = parseFloat(lng);
+
+      stationsWithDistance = stations.map((station) => {
+        const distance = calculateDistance(
+          latNum,
+          lngNum,
+          station.lat,
+          station.lng
+        );
+        return { ...station, distance };
+      }).sort((a, b) => a.distance - b.distance); // Sort by distance
+    }
+
+    // Get total count for pagination
+    const total = await prisma.station.count({ where });
 
     return NextResponse.json({
       success: true,
-      count: stations.length,
-      stations,
-    });
+      count: stationsWithDistance.length,
+      total,
+      page,
+      pages: Math.ceil(total / limit),
+      stations: stationsWithDistance,
+    }, { headers: corsHeaders });
   } catch (error) {
-    console.error('Error fetching stations:', error);
     return NextResponse.json(
       { error: 'Failed to fetch stations' },
-      { status: 500 }
+      { status: 500, headers: corsHeaders }
     );
   }
 }

@@ -23,11 +23,17 @@ function verifyToken(request: NextRequest): string | null {
 
   const token = authHeader.substring(7);
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as { ownerId: string; type: string };
-    if (decoded.type !== 'owner') {
+    // Support both old format (ownerId/type) and new format (userId/role)
+    const decoded = jwt.verify(token, JWT_SECRET) as { ownerId?: string; userId?: string; type?: string; role?: string };
+    
+    // Check for owner role/type
+    const isOwner = decoded.type === 'owner' || decoded.role === 'owner';
+    if (!isOwner) {
       return null;
     }
-    return decoded.ownerId;
+    
+    // Return the owner ID from either format
+    return decoded.ownerId || decoded.userId || null;
   } catch (error) {
     return null;
   }
@@ -52,8 +58,15 @@ export async function GET(request: NextRequest) {
             id: true,
             name: true,
             city: true,
+            state: true,
+            address: true,
+            lat: true,
+            lng: true,
             approvalStatus: true,
             isVerified: true,
+            cngAvailable: true,
+            cngQuantityKg: true,
+            cngUpdatedAt: true,
           },
         },
         _count: {

@@ -15,6 +15,7 @@ interface EnvConfig {
   
   // External services (optional)
   GOOGLE_MAPS_API_KEY?: string;
+  RAZORPAY_WEBHOOK_SECRET?: string;
 }
 
 const requiredEnvVars = [
@@ -27,6 +28,7 @@ const optionalEnvVars = {
   PORT: 3000,
   ALLOWED_ORIGINS: 'http://localhost:5173,http://localhost:3000',
   GOOGLE_MAPS_API_KEY: '',
+  RAZORPAY_WEBHOOK_SECRET: '',
 } as const;
 
 /**
@@ -68,6 +70,7 @@ function validateEnv(): EnvConfig {
     PORT: parseInt(process.env.PORT || String(optionalEnvVars.PORT)),
     ALLOWED_ORIGINS: (process.env.ALLOWED_ORIGINS || optionalEnvVars.ALLOWED_ORIGINS).split(','),
     GOOGLE_MAPS_API_KEY: process.env.GOOGLE_MAPS_API_KEY,
+    RAZORPAY_WEBHOOK_SECRET: process.env.RAZORPAY_WEBHOOK_SECRET,
   };
 }
 
@@ -82,6 +85,7 @@ export const {
   PORT,
   ALLOWED_ORIGINS,
   GOOGLE_MAPS_API_KEY,
+  RAZORPAY_WEBHOOK_SECRET,
 } = env;
 
 export const isProduction = NODE_ENV === 'production';
