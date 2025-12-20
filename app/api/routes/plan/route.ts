@@ -43,8 +43,11 @@ export async function POST(request: NextRequest) {
 
     const { origin, destination, travelMode, fuelType, avoidTolls, avoidHighways } = validation.data;
 
+    console.log('Route planning request:', { origin, destination, travelMode, fuelType });
+
     const googleMapsApiKey = process.env.GOOGLE_MAPS_API_KEY;
     if (!googleMapsApiKey) {
+      console.error('GOOGLE_MAPS_API_KEY is not configured in environment variables');
       return NextResponse.json(
         { error: 'GOOGLE_MAPS_API_KEY is not configured' },
         { status: 500 }
@@ -61,11 +64,14 @@ export async function POST(request: NextRequest) {
     );
 
     if (!directions) {
+      console.error('No directions found for route:', { origin, destination });
       return NextResponse.json(
         { error: 'Unable to find route between origin and destination' },
         { status: 404 }
       );
     }
+
+    console.log('Route found, polyline length:', directions.route.overview_polyline.points.length);
 
     // Find stations along the route
     const stationsAlongRoute = await findStationsAlongRoute(
@@ -84,6 +90,8 @@ export async function POST(request: NextRequest) {
       steps: directions.route.legs[0].steps.length,
     };
 
+    console.log('Route planning successful. Stations found:', stationsAlongRoute.length);
+
     return NextResponse.json({
       success: true,
       route: {
@@ -100,7 +108,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Error planning route:', error);
     return NextResponse.json(
-      { error: 'Failed to plan route' },
+      { error: 'Failed to plan route', details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     );
   }
@@ -118,9 +126,15 @@ async function getGoogleDirections(
 ) {
   try {
     const apiKey = process.env.GOOGLE_MAPS_API_KEY || '';
+
+    if (!apiKey) {
+      console.error('Google Maps API key is missing!');
+      return null;
+    }
+
     const originStr = `${origin.lat},${origin.lng}`;
     const destinationStr = `${destination.lat},${destination.lng}`;
-    
+
     const params = new URLSearchParams({
       origin: originStr,
       destination: destinationStr,
@@ -131,19 +145,38 @@ async function getGoogleDirections(
     if (avoidTolls) params.append('avoid', 'tolls');
     if (avoidHighways) params.append('avoid', 'highways');
 
-    const response = await fetch(
-      `https://maps.googleapis.com/maps/api/directions/json?${params.toString()}`
-    );
+    const url = `https://maps.googleapis.com/maps/api/directions/json?${params.toString()}`;
+    console.log('Calling Google Directions API:', { origin: originStr, destination: destinationStr, mode });
+
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      console.error('Google Directions API HTTP error:', response.status, response.statusText);
+      return null;
+    }
 
     const data = await response.json();
 
-    if (data.status === 'OK' && data.routes && data.routes.length > 0) {
+    console.log('Google Directions API status:', data.status);
+
+    if (data.status !== 'OK') {
+      console.error('Google Directions API error:', {
+        status: data.status,
+        error_message: data.error_message,
+        available_travel_modes: data.available_travel_modes
+      });
+      return null;
+    }
+
+    if (data.routes && data.routes.length > 0) {
+      console.log('Route found successfully, polyline points length:', data.routes[0].overview_polyline?.points?.length || 0);
       return {
         route: data.routes[0],
         status: data.status,
       };
     }
 
+    console.warn('No routes found in response');
     return null;
   } catch (error) {
     console.error('Google Directions API error:', error);
@@ -295,9 +328,9 @@ function calculateHaversineDistance(
   const a =
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
     Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLng / 2) *
-      Math.sin(dLng / 2);
+    Math.cos((lat2 * Math.PI) / 180) *
+    Math.sin(dLng / 2) *
+    Math.sin(dLng / 2);
 
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
