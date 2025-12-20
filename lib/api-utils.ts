@@ -4,24 +4,43 @@ import { NextResponse } from 'next/server';
  * Allowed origins for CORS
  * In production, replace with actual allowed origins
  */
-const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS?.split(',') || [
+const RAW_ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS;
+const ALLOWED_ORIGINS = RAW_ALLOWED_ORIGINS?.split(',').map((o) => o.trim()).filter(Boolean) || [
   'http://localhost:5173', // Vite dev server (admin-web)
   'http://localhost:3000', // Next.js
   'exp://10.202.200.65:8081', // Expo mobile app
 ];
+
+const ALLOW_ALL_ORIGINS = ALLOWED_ORIGINS.includes('*');
 
 /**
  * Get CORS headers based on request origin
  * Returns specific origin if allowed, otherwise rejects
  */
 export function getCorsHeaders(origin?: string | null): Record<string, string> {
-  const allowedOrigin = origin && ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  // Mobile apps / Expo may send no Origin, and LAN IPs can change frequently.
+  // If ALLOWED_ORIGINS includes '*', allow any origin.
+  // In non-production, also allow any origin to avoid dev friction.
+  const isProd = process.env.NODE_ENV === 'production';
+
+  let allowedOrigin: string = '*';
+  if (origin) {
+    if (ALLOW_ALL_ORIGINS) {
+      allowedOrigin = origin;
+    } else if (!isProd) {
+      allowedOrigin = origin;
+    } else if (ALLOWED_ORIGINS.includes(origin)) {
+      allowedOrigin = origin;
+    } else {
+      allowedOrigin = ALLOWED_ORIGINS[0] || '*';
+    }
+  }
   
   return {
     'Access-Control-Allow-Origin': allowedOrigin,
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    'Access-Control-Allow-Credentials': 'true',
+    // Keep false by default since most endpoints use Bearer tokens (and '*' is not valid with credentials).
   };
 }
 
