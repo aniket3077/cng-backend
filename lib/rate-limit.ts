@@ -24,6 +24,10 @@ export interface RateLimitConfig {
   maxRequests: number; // Max requests per window
 }
 
+export interface RateLimitOptions {
+  headers?: Record<string, string>;
+}
+
 /**
  * Rate limiting middleware to prevent brute force attacks
  * @param request - Next.js request object
@@ -32,11 +36,12 @@ export interface RateLimitConfig {
  */
 export function rateLimit(
   request: NextRequest,
-  config: RateLimitConfig
+  config: RateLimitConfig,
+  options: RateLimitOptions = {}
 ): NextResponse | null {
   // Get client identifier (IP address + user agent for better uniqueness)
-  const forwarded = request.headers.get('x-forwarded-for');
-  const ip = forwarded ? forwarded.split(',')[0] : request.headers.get('x-real-ip') || 'unknown';
+  const forwarded = request.headers.get('x-forwarded-for') || request.headers.get('x-vercel-forwarded-for');
+  const ip = forwarded ? forwarded.split(',')[0].trim() : request.headers.get('x-real-ip') || 'unknown';
   const userAgent = request.headers.get('user-agent') || 'unknown';
   const identifier = `${ip}-${userAgent}`;
 
@@ -63,6 +68,7 @@ export function rateLimit(
       {
         status: 429,
         headers: {
+          ...(options.headers ?? {}),
           'Retry-After': retryAfter.toString(),
           'X-RateLimit-Limit': config.maxRequests.toString(),
           'X-RateLimit-Remaining': '0',
@@ -83,8 +89,8 @@ export function rateLimit(
 export const rateLimitConfigs = {
   // For authentication endpoints (login, signup)
   auth: {
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    maxRequests: 5, // 5 attempts per 15 minutes
+    windowMs: 5 * 60 * 1000, // 5 minutes
+    maxRequests: 30, // 30 attempts per 5 minutes
   },
   // For general API endpoints
   api: {
