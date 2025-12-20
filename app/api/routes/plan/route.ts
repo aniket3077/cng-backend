@@ -43,6 +43,14 @@ export async function POST(request: NextRequest) {
 
     const { origin, destination, travelMode, fuelType, avoidTolls, avoidHighways } = validation.data;
 
+    const googleMapsApiKey = process.env.GOOGLE_MAPS_API_KEY;
+    if (!googleMapsApiKey) {
+      return NextResponse.json(
+        { error: 'GOOGLE_MAPS_API_KEY is not configured' },
+        { status: 500 }
+      );
+    }
+
     // Get route from Google Directions API
     const directions = await getGoogleDirections(
       origin,
@@ -109,7 +117,7 @@ async function getGoogleDirections(
   avoidHighways: boolean
 ) {
   try {
-    const apiKey = process.env.GOOGLE_MAPS_API_KEY || 'AIzaSyCuZ7Yw0Qe1gxJt9FUrHFCQvNBymm_XFn0';
+    const apiKey = process.env.GOOGLE_MAPS_API_KEY || '';
     const originStr = `${origin.lat},${origin.lng}`;
     const destinationStr = `${destination.lat},${destination.lng}`;
     

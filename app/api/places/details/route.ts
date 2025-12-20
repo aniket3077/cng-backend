@@ -29,7 +29,10 @@ export async function POST(request: NextRequest) {
     const { placeId } = validation.data;
 
     // Build Google Places Details API request
-    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || process.env.GOOGLE_MAPS_API_KEY || 'AIzaSyCuZ7Yw0Qe1gxJt9FUrHFCQvNBymm_XFn0';
+    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
+    if (!apiKey) {
+      return NextResponse.json({ error: 'Google Maps API key is not configured' }, { status: 500 });
+    }
     const params = new URLSearchParams({
       place_id: placeId,
       key: apiKey,
