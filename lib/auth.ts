@@ -91,24 +91,8 @@ export function requireAuth(request: NextRequest): JWTPayload {
 export function requireAdmin(request: NextRequest): JWTPayload {
   const payload = requireAuth(request);
 
-  if (payload.role !== 'admin' && payload.role !== 'superadmin') {
+  if (payload.role !== 'admin') {
     throw new Error('Admin access required');
-  }
-
-  return payload;
-}
-
-/**
- * Middleware helper to verify superadmin authentication
- * Returns admin payload if valid superadmin, throws error otherwise
- * @param request - Next.js request object
- * @returns Decoded JWT payload with superadmin verification
- */
-export function requireSuperAdmin(request: NextRequest): JWTPayload {
-  const payload = requireAuth(request);
-
-  if (payload.role !== 'superadmin') {
-    throw new Error('Superadmin access required');
   }
 
   return payload;

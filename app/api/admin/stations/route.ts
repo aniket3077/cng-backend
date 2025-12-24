@@ -15,7 +15,7 @@ function verifyAdminToken(request: NextRequest): string | null {
   }
 
   const decoded = verifyJwt(token);
-  if (!decoded || (decoded.role !== 'admin' && decoded.role !== 'superadmin')) {
+  if (!decoded || decoded.role !== 'admin') {
     return null;
   }
   return decoded.userId;

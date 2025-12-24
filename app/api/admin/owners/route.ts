@@ -24,7 +24,7 @@ function verifyAdminToken(request: NextRequest): string | null {
   const token = authHeader.substring(7);
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as { userId: string; role: string };
-    if (decoded.role !== 'admin' && decoded.role !== 'superadmin') {
+    if (decoded.role !== 'admin') {
       return null;
     }
     return decoded.userId;
