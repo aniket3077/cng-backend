@@ -15,7 +15,7 @@ function verifyAdminToken(request: NextRequest): string | null {
   }
 
   const decoded = verifyJwt(token);
-  if (!decoded || decoded.role !== 'admin') {
+  if (!decoded || (decoded.role !== 'admin' && decoded.role !== 'superadmin')) {
     return null;
   }
   return decoded.userId;
@@ -175,7 +175,7 @@ export async function POST(request: NextRequest) {
     if (data.subscriptionType && (data.subscriptionType === 'basic' || data.subscriptionType === 'premium')) {
       const durationMonths = data.subscriptionType === 'basic' ? 1 : 12;
       const amount = data.subscriptionType === 'basic' ? 999 : 9999;
-      
+
       await prisma.subscription.create({
         data: {
           stationId: station.id,
@@ -218,7 +218,7 @@ export async function PUT(request: NextRequest) {
     }
 
     const body = await request.json();
-    
+
     // Validate update data
     const validation = updateStationSchema.safeParse(body);
     if (!validation.success) {

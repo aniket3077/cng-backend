@@ -24,7 +24,7 @@ function verifyAdminToken(request: NextRequest): string | null {
   const token = authHeader.substring(7);
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as { userId: string; role: string };
-    if (decoded.role !== 'admin') {
+    if (decoded.role !== 'admin' && decoded.role !== 'superadmin') {
       return null;
     }
     return decoded.userId;
@@ -186,7 +186,7 @@ export async function PUT(request: NextRequest) {
 
         const sql = `UPDATE "StationOwner" SET ${updates.join(', ')} WHERE "id" = $${paramIndex}`;
         console.log('Executing SQL:', sql, 'with values:', values);
-        
+
         await prisma.$executeRawUnsafe(sql, ...values);
       }
     } catch (dbError) {

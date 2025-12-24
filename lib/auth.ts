@@ -46,7 +46,7 @@ export function verifyJwt(token: string): JWTPayload | null {
  */
 export function extractToken(request: NextRequest): string | null {
   const authHeader = request.headers.get('authorization');
-  
+
   if (!authHeader) {
     return null;
   }
@@ -68,13 +68,13 @@ export function extractToken(request: NextRequest): string | null {
  */
 export function requireAuth(request: NextRequest): JWTPayload {
   const token = extractToken(request);
-  
+
   if (!token) {
     throw new Error('No authorization token provided');
   }
 
   const payload = verifyJwt(token);
-  
+
   if (!payload) {
     throw new Error('Invalid or expired token');
   }
@@ -90,9 +90,25 @@ export function requireAuth(request: NextRequest): JWTPayload {
  */
 export function requireAdmin(request: NextRequest): JWTPayload {
   const payload = requireAuth(request);
-  
-  if (payload.role !== 'admin') {
+
+  if (payload.role !== 'admin' && payload.role !== 'superadmin') {
     throw new Error('Admin access required');
+  }
+
+  return payload;
+}
+
+/**
+ * Middleware helper to verify superadmin authentication
+ * Returns admin payload if valid superadmin, throws error otherwise
+ * @param request - Next.js request object
+ * @returns Decoded JWT payload with superadmin verification
+ */
+export function requireSuperAdmin(request: NextRequest): JWTPayload {
+  const payload = requireAuth(request);
+
+  if (payload.role !== 'superadmin') {
+    throw new Error('Superadmin access required');
   }
 
   return payload;
