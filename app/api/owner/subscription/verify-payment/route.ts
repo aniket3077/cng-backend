@@ -9,7 +9,7 @@ const verifySchema = z.object({
   razorpay_order_id: z.string(),
   razorpay_payment_id: z.string(),
   razorpay_signature: z.string(),
-  planId: z.enum(['basic', 'standard', 'premium']),
+  planId: z.enum(['basic', 'standard', 'premium', 'trial']),
 });
 
 export async function OPTIONS() {
@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
 
     const token = authHeader.split(' ')[1];
     const payload = verifyJwt(token);
-    
+
     if (!payload || payload.role !== 'owner') {
       return NextResponse.json(
         { error: 'Unauthorized' },
@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
     const secret = process.env.RAZORPAY_KEY_SECRET!;
     const signaturePayload = razorpay_order_id + "|" + razorpay_payment_id;
     const expectedSignature = crypto.createHmac('sha256', secret).update(signaturePayload).digest('hex');
-    
+
     if (expectedSignature !== razorpay_signature) {
       return NextResponse.json(
         { error: 'Invalid payment signature' },

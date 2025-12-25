@@ -19,6 +19,9 @@ model User {
   updatedAt    DateTime  @updatedAt
   vehicles     Vehicle[]
 
+  subscriptionType   String?
+  subscriptionEndsAt DateTime?
+
   @@index([email])
 }
 

@@ -14,6 +14,7 @@ const planDetails = {
   basic: { name: 'Basic', price: 999, duration: 30 },
   standard: { name: 'Standard', price: 2499, duration: 30 },
   premium: { name: 'Premium', price: 4999, duration: 30 },
+  trial: { name: '7-Day Trial', price: 1, duration: 7 },
 };
 
 /**
@@ -21,7 +22,7 @@ const planDetails = {
  * This function is idempotent - calling it multiple times with the same payment won't create duplicates
  * 
  * @param ownerId - The station owner's ID
- * @param planId - The subscription plan (basic, standard, or premium)
+ * @param planId - The subscription plan (basic, standard, premium, or trial)
  * @param razorpayOrderId - The Razorpay order ID
  * @param razorpayPaymentId - The Razorpay payment ID
  * @param razorpaySignature - The Razorpay signature (optional, for logging)
@@ -29,7 +30,7 @@ const planDetails = {
  */
 export async function activateSubscription(
   ownerId: string,
-  planId: 'basic' | 'standard' | 'premium',
+  planId: 'basic' | 'standard' | 'premium' | 'trial',
   razorpayOrderId: string,
   razorpayPaymentId: string,
   razorpaySignature?: string
@@ -146,6 +147,6 @@ export async function activateSubscription(
 /**
  * Get plan details by plan ID
  */
-export function getPlanDetails(planId: 'basic' | 'standard' | 'premium') {
+export function getPlanDetails(planId: 'basic' | 'standard' | 'premium' | 'trial') {
   return planDetails[planId];
 }

@@ -6,13 +6,14 @@ import { verifyJwt } from '@/lib/auth';
 import { corsHeaders } from '@/lib/api-utils';
 
 const orderSchema = z.object({
-  planId: z.enum(['basic', 'standard', 'premium']),
+  planId: z.enum(['basic', 'standard', 'premium', 'trial']),
 });
 
 const planDetails = {
   basic: { name: 'Basic', price: 999, duration: 30 },
   standard: { name: 'Standard', price: 2499, duration: 30 },
   premium: { name: 'Premium', price: 4999, duration: 30 },
+  trial: { name: '7-Day Trial', price: 1, duration: 7 },
 };
 
 export async function OPTIONS() {
@@ -31,7 +32,7 @@ export async function POST(request: NextRequest) {
 
     const token = authHeader.split(' ')[1];
     const payload = verifyJwt(token);
-    
+
     if (!payload || payload.role !== 'owner') {
       return NextResponse.json(
         { error: 'Unauthorized' },
@@ -72,11 +73,11 @@ export async function POST(request: NextRequest) {
     // Initialize Razorpay instance
     const keyId = process.env.RAZORPAY_KEY_ID;
     const keySecret = process.env.RAZORPAY_KEY_SECRET;
-    
+
     if (!keyId || !keySecret) {
       throw new Error('Razorpay credentials not configured');
     }
-    
+
     const razorpay = new Razorpay({
       key_id: keyId,
       key_secret: keySecret,
@@ -101,7 +102,7 @@ export async function POST(request: NextRequest) {
       console.error('Available prisma models:', Object.keys(prisma).filter(k => k[0] === k[0].toLowerCase()));
       throw new Error('PaymentHistory model not found on Prisma client. Please restart the server.');
     }
-    
+
     await prisma.paymentHistory.create({
       data: {
         ownerId: payload.userId,

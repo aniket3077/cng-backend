@@ -71,6 +71,8 @@ export async function GET(request: NextRequest) {
                     role: true,
                     createdAt: true,
                     updatedAt: true,
+                    subscriptionType: true,
+                    subscriptionEndsAt: true,
                     _count: {
                         select: {
                             vehicles: true,
@@ -98,6 +100,59 @@ export async function GET(request: NextRequest) {
         );
     } catch (error) {
         console.error('Get users error:', error);
+        return NextResponse.json(
+            { error: 'Internal server error' },
+            { status: 500, headers: corsHeaders }
+        );
+    }
+}
+
+// PUT - Update user details (subscription)
+export async function PUT(request: NextRequest) {
+    try {
+        const adminId = verifyAdminToken(request);
+        if (!adminId) {
+            return NextResponse.json(
+                { error: 'Unauthorized' },
+                { status: 401, headers: corsHeaders }
+            );
+        }
+
+        const { searchParams } = new URL(request.url);
+        const userId = searchParams.get('id');
+
+        if (!userId) {
+            return NextResponse.json(
+                { error: 'User ID is required' },
+                { status: 400, headers: corsHeaders }
+            );
+        }
+
+        const body = await request.json();
+        const { subscriptionType, subscriptionEndsAt } = body;
+
+        const data: any = {};
+        if (subscriptionType !== undefined) data.subscriptionType = subscriptionType;
+        if (subscriptionEndsAt !== undefined) data.subscriptionEndsAt = subscriptionEndsAt ? new Date(subscriptionEndsAt) : null;
+
+        const updatedUser = await prisma.user.update({
+            where: { id: userId },
+            data,
+            select: {
+                id: true,
+                name: true,
+                email: true,
+                subscriptionType: true,
+                subscriptionEndsAt: true,
+            },
+        });
+
+        return NextResponse.json(
+            { user: updatedUser, message: 'User updated successfully' },
+            { status: 200, headers: corsHeaders }
+        );
+    } catch (error) {
+        console.error('Update user error:', error);
         return NextResponse.json(
             { error: 'Internal server error' },
             { status: 500, headers: corsHeaders }
