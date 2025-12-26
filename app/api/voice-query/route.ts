@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { requireAuth } from '@/lib/auth';
+import { checkUserSubscription } from '@/lib/user-subscription';
 
 /**
  * Voice Query Processing API
@@ -50,10 +52,10 @@ async function getApprovedStations() {
     where: {
       // Only approved stations
       approvalStatus: 'approved',
-      
+
       // Only verified stations
       isVerified: true,
-      
+
       // Only stations with active subscriptions
       // NOTE: StationOwner does not have a `subscriptions` relation in the current schema.
       // We accept either:
@@ -80,13 +82,13 @@ async function getApprovedStations() {
           },
         },
       ],
-      
+
       // Only CNG stations
       AND: [
         {
           OR: [
-        { fuelTypes: { contains: 'CNG' } },
-        { fuelTypes: { contains: 'cng' } },
+            { fuelTypes: { contains: 'CNG' } },
+            { fuelTypes: { contains: 'cng' } },
           ],
         },
       ],
@@ -106,32 +108,62 @@ async function getApprovedStations() {
 
 function parseIntent(query: string): string {
   const queryLower = query.toLowerCase();
-  
+
   if (queryLower.includes('nearby') || queryLower.includes('near me') || queryLower.includes('close')) {
     return 'nearby_search';
   }
-  
+
   if (queryLower.includes('navigate') || queryLower.includes('directions') || queryLower.includes('take me')) {
     return 'navigation';
   }
-  
+
   if (queryLower.includes('available') || queryLower.includes('availability') || queryLower.includes('open')) {
     return 'availability';
   }
-  
+
   if (queryLower.includes('price') || queryLower.includes('cost') || queryLower.includes('rate')) {
     return 'pricing';
   }
-  
+
   if (queryLower.includes('cheapest') || queryLower.includes('lowest price')) {
     return 'cheapest';
   }
-  
+
   return 'general_search';
 }
 
 export async function POST(request: NextRequest) {
   try {
+    // 1. Verify Authentication
+    let userId: string;
+    try {
+      // For voice query, we extract token manually from header if needed, but here we assume standard Bearer auth
+      const payload = requireAuth(request);
+      userId = payload.userId;
+    } catch (e) {
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized: You must be logged in to use voice features.' },
+        { status: 401 }
+      );
+    }
+
+    // 2. Verify Subscription
+    const subStatus = await checkUserSubscription(userId);
+    if (!subStatus.isValid) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Subscription Required',
+          response: 'Subscription expired. Please renew your plan to use voice features.',
+          subscriptionStatus: {
+            isExpired: subStatus.isExpired,
+            expiryDate: subStatus.expiryDate,
+          }
+        },
+        { status: 403 }
+      );
+    }
+
     const body: VoiceQueryRequest = await request.json();
 
     if (!body.query) {
@@ -237,7 +269,7 @@ export async function POST(request: NextRequest) {
       case 'cheapest':
         // In production, this would check actual pricing data
         stations = allStations.slice(0, 5) as StationWithDistance[];
-        response = intent === 'cheapest' 
+        response = intent === 'cheapest'
           ? 'Showing stations with the best CNG prices in your area.'
           : 'CNG pricing varies by location. Showing nearby stations for comparison.';
         break;
@@ -245,7 +277,7 @@ export async function POST(request: NextRequest) {
       case 'general_search':
       default:
         // Search by name or location
-        stations = allStations.filter((station) => 
+        stations = allStations.filter((station) =>
           station.name.toLowerCase().includes(body.query.toLowerCase()) ||
           station.address.toLowerCase().includes(body.query.toLowerCase()) ||
           station.city.toLowerCase().includes(body.query.toLowerCase())

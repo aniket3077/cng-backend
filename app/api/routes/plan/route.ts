@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
+import { requireAuth } from '@/lib/auth';
+import { checkUserSubscription } from '@/lib/user-subscription';
 
 // Validation schema for route planning
 const routePlanSchema = z.object({
@@ -27,6 +29,35 @@ const routePlanSchema = z.object({
  */
 export async function POST(request: NextRequest) {
   try {
+    // 1. Verify Authentication
+    // We allow route planning ONLY for authenticated users with active subscription
+    let userId: string;
+    try {
+      const payload = requireAuth(request);
+      userId = payload.userId;
+    } catch (e) {
+      return NextResponse.json(
+        { error: 'Unauthorized: You must be logged in to plan routes.' },
+        { status: 401 }
+      );
+    }
+
+    // 2. Verify Subscription
+    const subStatus = await checkUserSubscription(userId);
+    if (!subStatus.isValid) {
+      return NextResponse.json(
+        {
+          error: 'Subscription Required',
+          message: subStatus.message || 'Active subscription required.',
+          subscriptionStatus: {
+            isExpired: subStatus.isExpired,
+            expiryDate: subStatus.expiryDate,
+          }
+        },
+        { status: 403 }
+      );
+    }
+
     const body = await request.json();
 
     // Validate input
