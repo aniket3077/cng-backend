@@ -40,11 +40,14 @@ export async function GET(request: NextRequest) {
           phone: user.phone,
           role: user.role,
           vehicles: user.vehicles,
+          subscriptionType: user.subscriptionType,
+          subscriptionEndsAt: user.subscriptionEndsAt,
         },
       },
       { status: 200, headers: corsHeaders }
     );
   } catch (error) {
+    console.error('Profile fetch error:', error);
     const message = error instanceof Error ? error.message : 'Internal server error';
 
     const status = message.includes('authorization token') || message.includes('Invalid or expired token')
