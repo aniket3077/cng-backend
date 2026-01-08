@@ -15,6 +15,14 @@ const corsHeaders = {
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 };
 
+// Subscription plan pricing configuration
+const PLAN_CONFIG = {
+    free_trial: { price: 0, duration: 15, name: 'Free Trial' },
+    '1_month': { price: 15, duration: 30, name: '1 Month' },
+    '6_month': { price: 79, duration: 180, name: '6 Months' },
+    '1_year': { price: 150, duration: 365, name: '1 Year' },
+} as const;
+
 export async function OPTIONS() {
     return NextResponse.json({}, { headers: corsHeaders });
 }
@@ -48,9 +56,35 @@ export async function POST(request: NextRequest) {
         const body = await request.json();
         const { planId, amount } = body;
 
-        if (!planId || !amount) {
+        if (!planId || amount === undefined) {
             return NextResponse.json(
                 { error: 'Plan ID and amount are required' },
+                { status: 400, headers: corsHeaders }
+            );
+        }
+
+        // Validate plan exists and price matches (security check)
+        const plan = PLAN_CONFIG[planId as keyof typeof PLAN_CONFIG];
+        if (!plan) {
+            return NextResponse.json(
+                { error: 'Invalid plan ID' },
+                { status: 400, headers: corsHeaders }
+            );
+        }
+
+        // Verify amount matches server-side price (prevent price manipulation)
+        const expectedPrice = plan.price;
+        if (parseFloat(amount) !== expectedPrice) {
+            return NextResponse.json(
+                { error: 'Price mismatch. Please refresh and try again.' },
+                { status: 400, headers: corsHeaders }
+            );
+        }
+
+        // Don't create order for free trial
+        if (planId === 'free_trial') {
+            return NextResponse.json(
+                { error: 'Free trial does not require payment' },
                 { status: 400, headers: corsHeaders }
             );
         }

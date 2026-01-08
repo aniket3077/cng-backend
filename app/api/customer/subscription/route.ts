@@ -9,6 +9,14 @@ const corsHeaders = {
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 };
 
+// Subscription plan pricing configuration
+export const PLAN_CONFIG = {
+    free_trial: { price: 0, duration: 15, name: 'Free Trial' },
+    '1_month': { price: 15, duration: 30, name: '1 Month' },
+    '6_month': { price: 79, duration: 180, name: '6 Months' },
+    '1_year': { price: 150, duration: 365, name: '1 Year' },
+} as const;
+
 export async function OPTIONS() {
     return NextResponse.json({}, { headers: corsHeaders });
 }
@@ -41,7 +49,7 @@ export async function POST(request: NextRequest) {
         }
 
         const body = await request.json();
-        const { planType } = body;
+        const { planType, autoPay } = body;
 
         if (!planType) {
             return NextResponse.json(
@@ -50,16 +58,24 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        let durationDays = 30; // Default 1 month
-        if (planType === 'free_trial') durationDays = 7;
-        else if (planType === '1_month') durationDays = 30;
-        else if (planType === '6_month') durationDays = 180;
-        else if (planType === '1_year') durationDays = 365;
+        // Validate plan type
+        if (!PLAN_CONFIG[planType as keyof typeof PLAN_CONFIG]) {
+            return NextResponse.json(
+                { error: 'Invalid plan type' },
+                { status: 400, headers: corsHeaders }
+            );
+        }
+
+        const plan = PLAN_CONFIG[planType as keyof typeof PLAN_CONFIG];
+        const durationDays = plan.duration;
 
         // Calculate expire date
         const startDate = new Date();
         const endDate = new Date();
         endDate.setDate(startDate.getDate() + durationDays);
+
+        // For free trial with auto-pay, set auto-renew to 1_month plan
+        const autoRenewPlan = planType === 'free_trial' && autoPay ? '1_month' : (autoPay ? planType : null);
 
         // Update user subscription
         const updatedUser = await prisma.user.update({
@@ -67,6 +83,7 @@ export async function POST(request: NextRequest) {
             data: {
                 subscriptionType: planType,
                 subscriptionEndsAt: endDate,
+                autoRenewPlan: autoRenewPlan,
             },
         });
 
@@ -79,6 +96,7 @@ export async function POST(request: NextRequest) {
                 subscription: {
                     type: planType,
                     expiresAt: endDate,
+                    autoRenewPlan: autoRenewPlan,
                 }
             },
             { status: 200, headers: corsHeaders }

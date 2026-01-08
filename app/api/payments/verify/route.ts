@@ -13,6 +13,14 @@ const corsHeaders = {
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 };
 
+// Subscription plan pricing configuration (must match customer/subscription route)
+const PLAN_CONFIG = {
+    free_trial: { price: 0, duration: 15, name: 'Free Trial' },
+    '1_month': { price: 15, duration: 30, name: '1 Month' },
+    '6_month': { price: 79, duration: 180, name: '6 Months' },
+    '1_year': { price: 150, duration: 365, name: '1 Year' },
+} as const;
+
 export async function OPTIONS() {
     return NextResponse.json({}, { headers: corsHeaders });
 }
@@ -59,10 +67,16 @@ export async function POST(request: NextRequest) {
         }
 
         // Payment verified, update subscription
-        let durationDays = 30; // Default 1 month
-        if (planType === '1_month') durationDays = 30;
-        else if (planType === '6_month') durationDays = 180;
-        else if (planType === '1_year') durationDays = 365;
+        // Validate plan type
+        if (!PLAN_CONFIG[planType as keyof typeof PLAN_CONFIG]) {
+            return NextResponse.json(
+                { error: 'Invalid plan type' },
+                { status: 400, headers: corsHeaders }
+            );
+        }
+
+        const plan = PLAN_CONFIG[planType as keyof typeof PLAN_CONFIG];
+        const durationDays = plan.duration;
 
         const startDate = new Date();
         const endDate = new Date();
