@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
 import { prisma } from '@/lib/prisma';
+import { PLAN_CONFIG } from '@/lib/subscription';
+
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 
 const corsHeaders = {
@@ -8,14 +10,6 @@ const corsHeaders = {
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 };
-
-// Subscription plan pricing configuration
-export const PLAN_CONFIG = {
-    free_trial: { price: 0, duration: 15, name: 'Free Trial' },
-    '1_month': { price: 15, duration: 30, name: '1 Month' },
-    '6_month': { price: 79, duration: 180, name: '6 Months' },
-    '1_year': { price: 150, duration: 365, name: '1 Year' },
-} as const;
 
 export async function OPTIONS() {
     return NextResponse.json({}, { headers: corsHeaders });
@@ -78,12 +72,13 @@ export async function POST(request: NextRequest) {
         const autoRenewPlan = planType === 'free_trial' && autoPay ? '1_month' : (autoPay ? planType : null);
 
         // Update user subscription
+        // NOTE: autoRenewPlan field requires migration - run: npx prisma migrate deploy
         const updatedUser = await prisma.user.update({
             where: { id: userId },
             data: {
                 subscriptionType: planType,
                 subscriptionEndsAt: endDate,
-                autoRenewPlan: autoRenewPlan,
+                // autoRenewPlan: autoRenewPlan, // Uncomment after migration is applied
             },
         });
 

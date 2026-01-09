@@ -4,6 +4,14 @@ import { verifyJwt } from './auth';
 
 const GRACE_PERIOD_DAYS = 3;
 
+// Subscription plan pricing configuration
+export const PLAN_CONFIG = {
+    free_trial: { price: 0, duration: 15, name: 'Free Trial' },
+    '1_month': { price: 15, duration: 30, name: '1 Month' },
+    '6_month': { price: 79, duration: 180, name: '6 Months' },
+    '1_year': { price: 150, duration: 365, name: '1 Year' },
+} as const;
+
 export interface SubscriptionCheckResult {
   isValid: boolean;
   isExpired: boolean;
