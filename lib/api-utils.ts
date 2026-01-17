@@ -35,7 +35,7 @@ export function getCorsHeaders(origin?: string | null): Record<string, string> {
       allowedOrigin = ALLOWED_ORIGINS[0] || '*';
     }
   }
-  
+
   return {
     'Access-Control-Allow-Origin': allowedOrigin,
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
@@ -74,7 +74,7 @@ export interface ApiResponse<T = unknown> {
  * Create a success response
  */
 export function successResponse<T>(
-  data: T, 
+  data: T,
   pagination?: ApiResponse['pagination'],
   headers: Record<string, string> = corsHeaders
 ): NextResponse {
@@ -82,7 +82,7 @@ export function successResponse<T>(
     success: true,
     data,
   };
-  
+
   if (pagination) {
     response.pagination = pagination;
   }
@@ -103,7 +103,7 @@ export function errorResponse(
     success: false,
     error: message,
   };
-  
+
   if (details) {
     response.details = details;
   }
@@ -117,16 +117,16 @@ export function errorResponse(
 export function handleAuthError(error: unknown): NextResponse {
   if (error instanceof Error) {
     const message = error.message;
-    
+
     if (message.includes('token')) {
       return errorResponse(message, 401);
     }
-    
+
     if (message.includes('Admin access') || message.includes('access required')) {
       return errorResponse(message, 403);
     }
   }
-  
+
   return errorResponse('Authentication failed', 401);
 }
 
@@ -147,9 +147,9 @@ export function calculateHaversineDistance(
   const a =
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
     Math.cos(toRad(lat1)) *
-      Math.cos(toRad(lat2)) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
+    Math.cos(toRad(lat2)) *
+    Math.sin(dLon / 2) *
+    Math.sin(dLon / 2);
 
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
@@ -166,7 +166,7 @@ export function parsePagination(searchParams: URLSearchParams, defaults = { page
   const page = Math.max(1, parseInt(searchParams.get('page') || String(defaults.page)));
   const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || String(defaults.limit))));
   const skip = (page - 1) * limit;
-  
+
   return { page, limit, skip };
 }
 
@@ -187,7 +187,7 @@ export function createPagination(page: number, limit: number, total: number) {
  */
 export function validateEnv(requiredVars: string[]): void {
   const missing = requiredVars.filter(v => !process.env[v]);
-  
+
   if (missing.length > 0) {
     throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
   }

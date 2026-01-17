@@ -122,6 +122,7 @@ export async function POST(request: NextRequest) {
       ownerName: owner.name,
       ownerEmail: owner.email,
       ownerPhone: owner.phone,
+      keyId: process.env.RAZORPAY_KEY_ID,
     }, { headers: corsHeaders });
   } catch (error) {
     console.error('Create order error:', error);

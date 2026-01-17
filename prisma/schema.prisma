@@ -8,23 +8,26 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+// Customer user model
 model User {
-  id           String    @id @default(cuid())
-  email        String    @unique
-  passwordHash String
-  name         String
-  phone        String?
-  role         String    @default("customer")
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id                  String    @id @default(cuid())
+  email               String    @unique
+  passwordHash        String
+  name                String
+  phone               String?
+  role                String    @default("customer")
+  subscriptionType    String?
+  subscriptionEndsAt  DateTime?
+  autoRenewPlan       String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  
   vehicles     Vehicle[]
-
-  subscriptionType   String?
-  subscriptionEndsAt DateTime?
-
+  
   @@index([email])
 }
 
+// Vehicle model
 model Vehicle {
   id         String   @id @default(cuid())
   userId     String
@@ -39,34 +42,35 @@ model Vehicle {
   @@index([plate])
 }
 
+// Station model
 model Station {
-  id               String          @id @default(cuid())
-  name             String
-  address          String
-  city             String
-  state            String
-  postalCode       String?
-  lat              Float
-  lng              Float
-  fuelTypes        String
-  isPartner        Boolean         @default(false)
-  phone            String?
-  openingHours     String?
-  amenities        String?
-  isVerified       Boolean         @default(false)
-  subscriptionType String?
-  cngAvailable     Boolean         @default(true)
-  cngQuantityKg    Float?          @default(0)
-  cngUpdatedAt     DateTime?
-  ownerId          String?
-  approvalStatus   String          @default("pending")
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
+  id                String         @id @default(cuid())
+  name              String
+  address           String
+  city              String
+  state             String
+  postalCode        String?
+  lat               Float
+  lng               Float
+  fuelTypes         String
+  isPartner         Boolean        @default(false)
+  phone             String?
+  openingHours      String?
+  amenities         String?
+  isVerified        Boolean        @default(false)
+  subscriptionType  String?
+  cngAvailable      Boolean        @default(true)
+  cngQuantityKg     Float?         @default(0)
+  cngUpdatedAt      DateTime?
+  ownerId           String?
+  approvalStatus    String         @default("pending")
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
   
-  owner            StationOwner?   @relation(fields: [ownerId], references: [id], onDelete: SetNull)
-  subscriptions    Subscription[]
-  supportTickets   SupportTicket[]
-  documents        StationDocument[]
+  owner             StationOwner?  @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+  subscriptions     Subscription[]
+  supportTickets    SupportTicket[]
+  documents         StationDocument[]
   
   @@index([lat, lng])
   @@index([city, state])
@@ -76,6 +80,7 @@ model Station {
   @@index([approvalStatus])
 }
 
+// Admin model
 model Admin {
   id           String   @id @default(cuid())
   email        String   @unique
@@ -84,10 +89,11 @@ model Admin {
   role         String   @default("admin")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
-
+  
   @@index([email])
 }
 
+// Subscription model
 model Subscription {
   id          String    @id @default(cuid())
   stationId   String
@@ -107,9 +113,10 @@ model Subscription {
   @@index([endDate])
 }
 
+// StationOwner model
 model StationOwner {
-  id                 String         @id @default(cuid())
-  email              String         @unique
+  id                 String          @id @default(cuid())
+  email              String          @unique
   passwordHash       String
   name               String
   phone              String
@@ -120,18 +127,18 @@ model StationOwner {
   city               String?
   state              String?
   postalCode         String?
-  status             String         @default("pending")
-  emailVerified      Boolean        @default(false)
-  phoneVerified      Boolean        @default(false)
-  kycStatus          String         @default("pending")
+  status             String          @default("pending")
+  emailVerified      Boolean         @default(false)
+  phoneVerified      Boolean         @default(false)
+  kycStatus          String          @default("pending")
   kycRejectionReason String?
-  profileComplete    Boolean        @default(false)
-  onboardingStep     Int            @default(1)
-  lastLoginAt        DateTime?
+  profileComplete    Boolean         @default(false)
+  onboardingStep     Int             @default(1)
   subscriptionType   String?
   subscriptionEndsAt DateTime?
-  createdAt          DateTime       @default(now())
-  updatedAt          DateTime       @updatedAt
+  lastLoginAt        DateTime?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
   
   stations           Station[]
   supportTickets     SupportTicket[]
@@ -142,48 +149,48 @@ model StationOwner {
   @@index([email])
   @@index([status])
   @@index([kycStatus])
-  @@index([subscriptionType])
-  @@index([subscriptionEndsAt])
 }
 
+// StationDocument model
 model StationDocument {
-  id              String    @id @default(cuid())
+  id              String   @id @default(cuid())
   stationId       String
   documentType    String
   fileUrl         String
   fileName        String
   fileSize        Int?
-  uploadedAt      DateTime  @default(now())
+  uploadedAt      DateTime @default(now())
   verifiedAt      DateTime?
   verifiedBy      String?
-  status          String    @default("pending")
+  status          String   @default("pending")
   rejectionReason String?
   
-  station         Station   @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  station         Station  @relation(fields: [stationId], references: [id], onDelete: Cascade)
   
   @@index([stationId])
   @@index([status])
 }
 
+// SupportTicket model
 model SupportTicket {
-  id           String        @id @default(cuid())
-  ticketNumber String        @unique
-  subject      String
-  description  String
-  category     String
-  priority     String        @default("medium")
-  status       String        @default("open")
-  ownerId      String?
-  stationId    String?
-  assignedTo   String?
-  resolution   String?
-  resolvedAt   DateTime?
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
+  id            String        @id @default(cuid())
+  ticketNumber  String        @unique
+  subject       String
+  description   String
+  category      String
+  priority      String        @default("medium")
+  status        String        @default("open")
+  ownerId       String?
+  stationId     String?
+  assignedTo    String?
+  resolution    String?
+  resolvedAt    DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
   
-  owner        StationOwner? @relation(fields: [ownerId], references: [id], onDelete: SetNull)
-  station      Station?      @relation(fields: [stationId], references: [id], onDelete: SetNull)
-  replies      TicketReply[]
+  owner         StationOwner? @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+  station       Station?      @relation(fields: [stationId], references: [id], onDelete: SetNull)
+  replies       TicketReply[]
   
   @@index([ownerId])
   @@index([stationId])
@@ -192,6 +199,7 @@ model SupportTicket {
   @@index([ticketNumber])
 }
 
+// TicketReply model
 model TicketReply {
   id            String        @id @default(cuid())
   ticketId      String
@@ -208,6 +216,7 @@ model TicketReply {
   @@index([createdAt])
 }
 
+// Notification model
 model Notification {
   id        String       @id @default(cuid())
   ownerId   String
@@ -228,6 +237,7 @@ model Notification {
   @@index([createdAt])
 }
 
+// ActivityLog model
 model ActivityLog {
   id          String        @id @default(cuid())
   ownerId     String?
@@ -249,26 +259,31 @@ model ActivityLog {
   @@index([createdAt])
 }
 
+// PaymentHistory model
 model PaymentHistory {
-  id                    String    @id @default(cuid())
-  ownerId               String
-  razorpayOrderId       String    @unique
-  razorpayPaymentId     String?
-  razorpaySignature     String?
-  planId                String
-  planName              String
-  amount                Float
-  currency              String    @default("INR")
-  status                String    @default("pending")
-  subscriptionStartsAt  DateTime?
-  subscriptionEndsAt    DateTime?
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
+  id                  String       @id @default(cuid())
+  ownerId             String
+  razorpayOrderId     String       @unique
+  razorpayPaymentId   String?      @unique
+  razorpaySignature   String?
+  planId              String
+  planName            String
+  amount              Int
+  currency            String       @default("INR")
+  status              String       @default("pending") // pending, success, failed, refunded
+  paymentMethod       String?
+  errorCode           String?
+  errorDescription    String?
+  subscriptionStartsAt DateTime?
+  subscriptionEndsAt  DateTime?
+  metadata            String?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
   
-  owner                 StationOwner @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  owner               StationOwner @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   
   @@index([ownerId])
-  @@index([razorpayOrderId])
   @@index([status])
   @@index([createdAt])
+  @@index([razorpayOrderId])
 }

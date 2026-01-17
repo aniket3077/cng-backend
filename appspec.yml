@@ -1,0 +1,43 @@
+# AWS CodeDeploy AppSpec file
+version: 0.0
+os: linux
+
+files:
+  - source: /
+    destination: /home/ubuntu/cng-backend
+    overwrite: true
+
+permissions:
+  - object: /home/ubuntu/cng-backend
+    owner: ubuntu
+    group: ubuntu
+    mode: 755
+    type:
+      - directory
+      - file
+
+hooks:
+  ApplicationStop:
+    - location: scripts/stop_application.sh
+      timeout: 60
+      runas: ubuntu
+
+  BeforeInstall:
+    - location: scripts/before_install.sh
+      timeout: 120
+      runas: ubuntu
+
+  AfterInstall:
+    - location: scripts/after_install.sh
+      timeout: 300
+      runas: ubuntu
+
+  ApplicationStart:
+    - location: scripts/start_application.sh
+      timeout: 120
+      runas: ubuntu
+
+  ValidateService:
+    - location: scripts/validate_service.sh
+      timeout: 60
+      runas: ubuntu

@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
 
     // Verify password
     const isValidPassword = await bcrypt.compare(password, admin.passwordHash);
-    
+
     if (!isValidPassword) {
       return NextResponse.json(
         { error: 'Invalid credentials' },
