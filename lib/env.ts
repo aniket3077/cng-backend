@@ -21,7 +21,6 @@ interface EnvConfig {
 const requiredEnvVars = [
   'JWT_SECRET',
   'DATABASE_URL',
-  'ALLOWED_ORIGINS',
 ] as const;
 
 const optionalEnvVars = {
@@ -66,10 +65,9 @@ function validateEnv(): EnvConfig {
   return {
     JWT_SECRET: jwtSecret,
     DATABASE_URL: process.env.DATABASE_URL!,
-    ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS!
-      .split(',')
-      .map(origin => origin.trim())
-      .filter(Boolean),
+    ALLOWED_ORIGINS: (process.env.ALLOWED_ORIGINS
+      ? process.env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim()).filter(Boolean)
+      : ['*']),
     NODE_ENV: (process.env.NODE_ENV as EnvConfig['NODE_ENV']) || 'development',
     PORT: parseInt(process.env.PORT || String(optionalEnvVars.PORT)),
     GOOGLE_MAPS_API_KEY: process.env.GOOGLE_MAPS_API_KEY,
