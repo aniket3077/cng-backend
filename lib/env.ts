@@ -3,6 +3,7 @@
  * This file validates required environment variables at startup
  */
 import { parseAllowedOrigins } from './cors';
+import { sanitizeEnvValue } from './env-values';
 
 interface EnvConfig {
   // Required
@@ -39,7 +40,7 @@ function validateEnv(): EnvConfig {
 
   // Check required variables
   for (const key of requiredEnvVars) {
-    if (!process.env[key]) {
+    if (!sanitizeEnvValue(process.env[key])) {
       missing.push(key);
     }
   }
@@ -52,7 +53,7 @@ function validateEnv(): EnvConfig {
   }
 
   // Validate JWT_SECRET strength
-  const jwtSecret = process.env.JWT_SECRET!;
+  const jwtSecret = sanitizeEnvValue(process.env.JWT_SECRET);
   if (jwtSecret.length < 32) {
     console.warn('⚠️  JWT_SECRET should be at least 32 characters for security');
   }
@@ -65,12 +66,12 @@ function validateEnv(): EnvConfig {
 
   return {
     JWT_SECRET: jwtSecret,
-    DATABASE_URL: process.env.DATABASE_URL!,
+    DATABASE_URL: sanitizeEnvValue(process.env.DATABASE_URL),
     ALLOWED_ORIGINS: parseAllowedOrigins(process.env.ALLOWED_ORIGINS),
     NODE_ENV: (process.env.NODE_ENV as EnvConfig['NODE_ENV']) || 'development',
     PORT: parseInt(process.env.PORT || String(optionalEnvVars.PORT)),
-    GOOGLE_MAPS_API_KEY: process.env.GOOGLE_MAPS_API_KEY,
-    RAZORPAY_WEBHOOK_SECRET: process.env.RAZORPAY_WEBHOOK_SECRET,
+    GOOGLE_MAPS_API_KEY: sanitizeEnvValue(process.env.GOOGLE_MAPS_API_KEY),
+    RAZORPAY_WEBHOOK_SECRET: sanitizeEnvValue(process.env.RAZORPAY_WEBHOOK_SECRET),
   };
 }
 

@@ -1,4 +1,5 @@
 import { Prisma, PrismaClient } from '@prisma/client';
+import { sanitizeEnvValue } from './env-values';
 
 // Resilient Prisma initialization for serverless (Vercel)
 // If DATABASE_URL is not set or Prisma fails to init, export a Proxy
@@ -8,10 +9,16 @@ const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
 let client: PrismaClient | undefined;
 let initError: Error | null = null;
+const databaseUrl = sanitizeEnvValue(process.env.DATABASE_URL);
 
-if (process.env.DATABASE_URL) {
+if (databaseUrl) {
   try {
     client = globalForPrisma.prisma ?? new PrismaClient({
+      datasources: {
+        db: {
+          url: databaseUrl,
+        },
+      },
       log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
     });
 

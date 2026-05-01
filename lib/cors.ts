@@ -1,3 +1,5 @@
+import { sanitizeEnvValue } from './env-values';
+
 const DEFAULT_LOCAL_PROTOCOL = 'http://';
 const DEFAULT_REMOTE_PROTOCOL = 'https://';
 const ORIGIN_SCHEME_RE = /^[a-z][a-z\d+\-.]*:\/\//i;
@@ -13,7 +15,7 @@ function addDefaultProtocol(origin: string): string {
 }
 
 export function normalizeOrigin(origin: string): string | null {
-  const trimmedOrigin = origin.trim();
+  const trimmedOrigin = sanitizeEnvValue(origin);
 
   if (!trimmedOrigin) {
     return null;
@@ -35,8 +37,9 @@ export function normalizeOrigin(origin: string): string | null {
 }
 
 export function parseAllowedOrigins(rawOrigins = process.env.ALLOWED_ORIGINS): string[] {
-  const normalizedOrigins = (rawOrigins
-    ? rawOrigins.split(',').map(origin => normalizeOrigin(origin)).filter(Boolean)
+  const sanitizedOrigins = sanitizeEnvValue(rawOrigins);
+  const normalizedOrigins = (sanitizedOrigins
+    ? sanitizedOrigins.split(',').map(origin => normalizeOrigin(origin)).filter(Boolean)
     : ['*']) as string[];
 
   return normalizedOrigins.length > 0 ? [...new Set(normalizedOrigins)] : ['*'];

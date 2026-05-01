@@ -12,6 +12,8 @@ This backend deploys cleanly to Vercel once the runtime and database settings ma
 
 Set these environment variables in the Vercel project before deploying:
 
+Important: paste the values in Vercel without wrapping them in quotes. Vercel stores the text literally.
+
 ```env
 DATABASE_URL=postgresql://postgres.PROJECT_REF:YOUR_DB_PASSWORD@aws-0-REGION.pooler.supabase.com:6543/postgres?pgbouncer=true&connection_limit=1&connect_timeout=30
 DIRECT_URL=postgresql://postgres.PROJECT_REF:YOUR_DB_PASSWORD@aws-0-REGION.pooler.supabase.com:5432/postgres?connect_timeout=30
