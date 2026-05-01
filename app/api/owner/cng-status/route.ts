@@ -65,7 +65,12 @@ export async function PUT(request: NextRequest) {
   try {
     // Check subscription first
     const subscriptionCheck = await requireActiveSubscription(request);
-    if (subscriptionCheck) return subscriptionCheck;
+    if (subscriptionCheck) {
+      Object.entries(corsHeaders).forEach(([key, value]) => {
+        subscriptionCheck.headers.set(key, value);
+      });
+      return subscriptionCheck;
+    }
 
     const authHeader = request.headers.get('authorization');
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -190,7 +195,7 @@ export async function PUT(request: NextRequest) {
   } catch (error) {
     console.error('Update CNG status error:', error);
     return NextResponse.json(
-      { error: 'Failed to update CNG status' },
+      { error: error instanceof Error ? error.message : 'Failed to update CNG status' },
       { status: 500, headers: corsHeaders }
     );
   }
