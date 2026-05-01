@@ -23,9 +23,9 @@ class RedisTokenBlacklist {
   }
 
   private async initializeRedis(): Promise<void> {
-    // Skip Redis initialization in development unless explicitly enabled
-    if (process.env.NODE_ENV === 'development' && !process.env.REDIS_ENABLED) {
-      console.log('Redis disabled in development, using memory blacklist');
+    // Only initialize Redis if a URL is provided
+    if (!process.env.REDIS_URL) {
+      console.log('Redis URL not provided, using memory blacklist');
       this.client = null;
       this.isConnected = false;
       return;
