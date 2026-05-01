@@ -25,7 +25,6 @@ class RedisTokenBlacklist {
   private async initializeRedis(): Promise<void> {
     // Only initialize Redis if a URL is provided
     if (!process.env.REDIS_URL) {
-      console.log('Redis URL not provided, using memory blacklist');
       this.client = null;
       this.isConnected = false;
       return;
