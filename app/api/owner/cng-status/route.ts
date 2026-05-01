@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
     }
 
     const token = authHeader.split(' ')[1];
-    const payload = verifyJwt(token);
+    const payload = await verifyJwt(token);
     
     if (!payload || payload.role !== 'owner') {
       return NextResponse.json(
@@ -76,7 +76,7 @@ export async function PUT(request: NextRequest) {
     }
 
     const token = authHeader.split(' ')[1];
-    const payload = verifyJwt(token);
+    const payload = await verifyJwt(token);
     
     if (!payload || payload.role !== 'owner') {
       return NextResponse.json(

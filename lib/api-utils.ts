@@ -5,14 +5,7 @@ import { NextResponse } from 'next/server';
  * In production, replace with actual allowed origins
  */
 const RAW_ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS;
-const ALLOWED_ORIGINS = RAW_ALLOWED_ORIGINS?.split(',').map((o) => o.trim()).filter(Boolean) || [
-  // Vite dev server (admin-web)
-  // Next.js
-  'exp://10.202.200.65:8081', // Expo mobile app
-  'https://cngbharat.com', // Production Frontend
-  'https://www.cngbharat.com', // Production Frontend WWW
-  'https://cngmain.netlify.app', // Production Deploy
-];
+const ALLOWED_ORIGINS = RAW_ALLOWED_ORIGINS?.split(',').map((o) => o.trim()).filter(Boolean) || [];
 
 const ALLOW_ALL_ORIGINS = ALLOWED_ORIGINS.includes('*');
 
@@ -21,29 +14,36 @@ const ALLOW_ALL_ORIGINS = ALLOWED_ORIGINS.includes('*');
  * Returns specific origin if allowed, otherwise rejects
  */
 export function getCorsHeaders(origin?: string | null): Record<string, string> {
-  // Mobile apps / Expo may send no Origin, and LAN IPs can change frequently.
-  // If ALLOWED_ORIGINS includes '*', allow any origin.
-  // In non-production, also allow any origin to avoid dev friction.
   const isProd = process.env.NODE_ENV === 'production';
 
-  let allowedOrigin: string = '*';
+  let allowedOrigin: string = '';
+  
   if (origin) {
     if (ALLOW_ALL_ORIGINS) {
       allowedOrigin = origin;
-    } else if (!isProd) {
-      allowedOrigin = origin;
     } else if (ALLOWED_ORIGINS.includes(origin)) {
       allowedOrigin = origin;
+    } else if (!isProd) {
+      // In development, allow localhost origins only
+      if (origin.startsWith('http://localhost:') || origin.startsWith('exp://')) {
+        allowedOrigin = origin;
+      } else {
+        allowedOrigin = ALLOWED_ORIGINS[0] || '';
+      }
     } else {
-      allowedOrigin = ALLOWED_ORIGINS[0] || '*';
+      // In production, reject unknown origins
+      allowedOrigin = ALLOWED_ORIGINS[0] || '';
     }
+  } else {
+    // No origin header (mobile apps, etc.)
+    allowedOrigin = isProd ? ALLOWED_ORIGINS[0] || '' : '';
   }
 
   return {
     'Access-Control-Allow-Origin': allowedOrigin,
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    // Keep false by default since most endpoints use Bearer tokens (and '*' is not valid with credentials).
+    'Access-Control-Allow-Credentials': 'false',
   };
 }
 

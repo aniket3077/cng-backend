@@ -8,13 +8,13 @@ export async function OPTIONS() {
   return NextResponse.json({}, { headers: corsHeaders });
 }
 
-function verifyAdminToken(request: NextRequest): string | null {
+async function verifyAdminToken(request: NextRequest): Promise<string | null> {
   const token = extractToken(request);
   if (!token) {
     return null;
   }
 
-  const decoded = verifyJwt(token);
+  const decoded = await verifyJwt(token);
   if (!decoded || decoded.role !== 'admin') {
     return null;
   }

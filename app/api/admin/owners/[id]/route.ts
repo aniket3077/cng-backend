@@ -14,7 +14,7 @@ function verifyAdminToken(request: NextRequest): string | null {
     return null;
   }
 
-  const decoded = verifyJwt(token);
+  const decoded = await verifyJwt(token);
   if (!decoded || decoded.role !== 'admin') {
     return null;
   }
@@ -187,16 +187,30 @@ export async function PUT(
       }
     }
 
-    if (validation.data.subscriptionType && validation.data.subscriptionType !== existingOwner.subscriptionType) {
-      await prisma.notification.create({
-        data: {
-          ownerId: params.id,
-          title: 'Subscription Updated',
-          message: `Your subscription has been changed to ${validation.data.subscriptionType} plan.`,
-          type: 'info',
-          category: 'subscription',
-        },
-      });
+    if (validation.data.subscriptionType !== undefined && validation.data.subscriptionType !== existingOwner.subscriptionType) {
+      if (validation.data.subscriptionType) {
+        await prisma.notification.create({
+          data: {
+            ownerId: params.id,
+            title: 'Subscription Approved',
+            message: `Your ${validation.data.subscriptionType} subscription request has been approved.`,
+            type: 'success',
+            category: 'subscription',
+          },
+        });
+      } else {
+        await prisma.notification.create({
+          data: {
+            ownerId: params.id,
+            title: existingOwner.subscriptionEndsAt ? 'Subscription Deactivated' : 'Subscription Request Rejected',
+            message: existingOwner.subscriptionEndsAt
+              ? 'Your subscription has been deactivated by admin.'
+              : 'Your subscription request was rejected by admin.',
+            type: existingOwner.subscriptionEndsAt ? 'warning' : 'error',
+            category: 'subscription',
+          },
+        });
+      }
     }
 
     const { passwordHash, ...ownerData } = updatedOwner;

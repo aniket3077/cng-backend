@@ -3,7 +3,6 @@ import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { verifyJwt } from '@/lib/auth';
 import { corsHeaders } from '@/lib/api-utils';
-import { requireActiveSubscription } from '@/lib/subscription';
 
 const stationSchema = z.object({
   name: z.string().min(2).max(200).trim(),
@@ -35,7 +34,7 @@ export async function GET(request: NextRequest) {
     }
 
     const token = authHeader.split(' ')[1];
-    const payload = verifyJwt(token);
+    const payload = await verifyJwt(token);
     
     if (!payload || payload.role !== 'owner') {
       return NextResponse.json(
@@ -62,10 +61,6 @@ export async function GET(request: NextRequest) {
 // POST - Create new station
 export async function POST(request: NextRequest) {
   try {
-    // Check subscription first
-    const subscriptionCheck = await requireActiveSubscription(request);
-    if (subscriptionCheck) return subscriptionCheck;
-
     const authHeader = request.headers.get('authorization');
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return NextResponse.json(
@@ -75,7 +70,7 @@ export async function POST(request: NextRequest) {
     }
 
     const token = authHeader.split(' ')[1];
-    const payload = verifyJwt(token);
+    const payload = await verifyJwt(token);
     
     if (!payload || payload.role !== 'owner') {
       return NextResponse.json(

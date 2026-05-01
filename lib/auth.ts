@@ -1,7 +1,7 @@
 import jwt from 'jsonwebtoken';
 import { NextRequest } from 'next/server';
 import { JWT_SECRET } from './env';
-import { isTokenBlacklisted } from './token-blacklist';
+import { isTokenBlacklisted } from './redis-token-blacklist';
 
 export interface JWTPayload {
   userId: string;
@@ -16,7 +16,7 @@ export interface JWTPayload {
  */
 export function signJwt(payload: JWTPayload): string {
   return jwt.sign(payload, JWT_SECRET, {
-    expiresIn: '7d', // Token valid for 7 days
+    expiresIn: '2d', // Token valid for 2 days (reduced from 7d for security)
   });
 }
 
@@ -25,9 +25,10 @@ export function signJwt(payload: JWTPayload): string {
  * @param token - JWT token string
  * @returns Decoded payload or null if invalid
  */
-export function verifyJwt(token: string): JWTPayload | null {
+export async function verifyJwt(token: string): Promise<JWTPayload | null> {
   // Check if token is blacklisted
-  if (isTokenBlacklisted(token)) {
+  const blacklisted = await isTokenBlacklisted(token);
+  if (blacklisted) {
     return null;
   }
 
@@ -66,14 +67,14 @@ export function extractToken(request: NextRequest): string | null {
  * @param request - Next.js request object
  * @returns Decoded JWT payload
  */
-export function requireAuth(request: NextRequest): JWTPayload {
+export async function requireAuth(request: NextRequest): Promise<JWTPayload> {
   const token = extractToken(request);
 
   if (!token) {
     throw new Error('No authorization token provided');
   }
 
-  const payload = verifyJwt(token);
+  const payload = await verifyJwt(token);
 
   if (!payload) {
     throw new Error('Invalid or expired token');
@@ -88,8 +89,8 @@ export function requireAuth(request: NextRequest): JWTPayload {
  * @param request - Next.js request object
  * @returns Decoded JWT payload with admin verification
  */
-export function requireAdmin(request: NextRequest): JWTPayload {
-  const payload = requireAuth(request);
+export async function requireAdmin(request: NextRequest): Promise<JWTPayload> {
+  const payload = await requireAuth(request);
 
   if (payload.role !== 'admin') {
     throw new Error('Admin access required');

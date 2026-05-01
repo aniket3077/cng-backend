@@ -32,19 +32,19 @@ export async function POST(request: NextRequest) {
 
       const { email, password } = validation.data;
 
-      const user = await prisma.user.findUnique({
+      const admin = await prisma.admin.findUnique({
         where: { email },
       });
 
-      if (!user) {
-        securityLogger.logAuthenticationAttempt(req, email, false, 'User not found');
+      if (!admin) {
+        securityLogger.logAuthenticationAttempt(req, email, false, 'Admin not found');
         return NextResponse.json(
           { error: 'Invalid email or password' },
           { status: 401, headers: corsHeaders }
         );
       }
 
-      const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
+      const isPasswordValid = await bcrypt.compare(password, admin.passwordHash);
       if (!isPasswordValid) {
         securityLogger.logAuthenticationAttempt(req, email, false, 'Invalid password');
         return NextResponse.json(
@@ -53,10 +53,10 @@ export async function POST(request: NextRequest) {
         );
       }
 
-    const token = signJwt({
-        userId: user.id,
-        email: user.email,
-        role: user.role,
+      const token = signJwt({
+        userId: admin.id,
+        email: admin.email,
+        role: admin.role,
       });
 
       securityLogger.logAuthenticationAttempt(req, email, true);
@@ -65,18 +65,17 @@ export async function POST(request: NextRequest) {
         {
           message: 'Login successful',
           token,
-          user: {
-            id: user.id,
-            email: user.email,
-            name: user.name,
-            phone: user.phone,
-            role: user.role,
+          admin: {
+            id: admin.id,
+            email: admin.email,
+            name: admin.name,
+            role: admin.role,
           },
         },
         { status: 200, headers: corsHeaders }
       );
     } catch (error) {
-      console.error('Login error:', error);
+      console.error('Admin login error:', error);
       securityLogger.logAuthenticationAttempt(req, 'unknown', false, 'Internal server error');
       return NextResponse.json(
         { error: 'Internal server error' },

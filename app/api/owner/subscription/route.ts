@@ -3,7 +3,6 @@ import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { verifyJwt } from '@/lib/auth';
 import { corsHeaders } from '@/lib/api-utils';
-import crypto from 'crypto';
 
 const subscriptionSchema = z.object({
   planId: z.enum(['basic', 'standard', 'premium', 'trial']),
@@ -32,7 +31,7 @@ export async function GET(request: NextRequest) {
     }
 
     const token = authHeader.split(' ')[1];
-    const payload = verifyJwt(token);
+    const payload = await verifyJwt(token);
 
     if (!payload || payload.role !== 'owner') {
       return NextResponse.json(
@@ -61,10 +60,13 @@ export async function GET(request: NextRequest) {
       ? new Date(owner.subscriptionEndsAt) > new Date()
       : false;
 
+    const isPendingApproval = !!owner.subscriptionType && !owner.subscriptionEndsAt;
+
     return NextResponse.json({
       subscription: {
         plan: owner.subscriptionType || 'none',
         isActive,
+        isPendingApproval,
         expiresAt: owner.subscriptionEndsAt,
       }
     }, { headers: corsHeaders });
@@ -89,7 +91,7 @@ export async function POST(request: NextRequest) {
     }
 
     const token = authHeader.split(' ')[1];
-    const payload = verifyJwt(token);
+    const payload = await verifyJwt(token);
 
     if (!payload || payload.role !== 'owner') {
       return NextResponse.json(
@@ -111,24 +113,65 @@ export async function POST(request: NextRequest) {
     const { planId } = validation.data;
     const plan = planDetails[planId];
 
-    // For now, just update the subscription request
-    // In production, this would integrate with a payment gateway
+    const currentOwner = await prisma.stationOwner.findUnique({
+      where: { id: payload.userId },
+      select: {
+        subscriptionType: true,
+        subscriptionEndsAt: true,
+      },
+    });
+
+    if (!currentOwner) {
+      return NextResponse.json(
+        { error: 'Owner not found' },
+        { status: 404, headers: corsHeaders }
+      );
+    }
+
+    const hasActiveSubscription = !!currentOwner.subscriptionEndsAt && new Date(currentOwner.subscriptionEndsAt) > new Date();
+
+    if (hasActiveSubscription) {
+      return NextResponse.json(
+        { error: 'You already have an active subscription' },
+        { status: 400, headers: corsHeaders }
+      );
+    }
+
     const owner = await prisma.stationOwner.update({
       where: { id: payload.userId },
       data: {
         subscriptionType: planId,
-        // Set subscription end date to 30 days from now (for demo)
-        subscriptionEndsAt: new Date(Date.now() + plan.duration * 24 * 60 * 60 * 1000),
+        subscriptionEndsAt: null,
+      },
+    });
+
+    await prisma.activityLog.create({
+      data: {
+        ownerId: payload.userId,
+        action: 'subscription_requested',
+        description: `Subscription request submitted for ${plan.name} plan`,
+        metadata: JSON.stringify({ planId }),
+      },
+    });
+
+    await prisma.notification.create({
+      data: {
+        ownerId: payload.userId,
+        title: 'Subscription request sent',
+        message: `Your ${plan.name} subscription request has been sent to the admin for approval.`,
+        type: 'info',
+        category: 'subscription',
       },
     });
 
     return NextResponse.json({
-      message: 'Subscription activated successfully',
+      message: 'Subscription request sent to admin for approval',
       subscription: {
         plan: planId,
         planName: plan.name,
         price: plan.price,
         expiresAt: owner.subscriptionEndsAt,
+        isPendingApproval: true,
       }
     }, { status: 201, headers: corsHeaders });
   } catch (error) {
