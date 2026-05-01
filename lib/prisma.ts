@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 
 // Resilient Prisma initialization for serverless (Vercel)
 // If DATABASE_URL is not set or Prisma fails to init, export a Proxy
@@ -38,6 +38,36 @@ export const prisma = new Proxy(
     },
   }
 ) as unknown as PrismaClient;
+
+// Helper to check whether Prisma initialized successfully
+export function isPrismaInitialized(): boolean {
+  return !!client && initError === null;
+}
+
+// Helper to surface init error for diagnostics
+export function getPrismaInitError(): Error | null {
+  return initError;
+}
+
+const PRISMA_UNAVAILABLE_ERROR_CODES = new Set([
+  'P1000', // Authentication failed
+  'P1001', // Database unreachable
+  'P1002', // Database timeout
+  'P1017', // Server closed the connection
+  'P2021', // Table does not exist
+]);
+
+export function isPrismaUnavailableError(error: unknown): boolean {
+  if (error instanceof Prisma.PrismaClientInitializationError) {
+    return true;
+  }
+
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    return PRISMA_UNAVAILABLE_ERROR_CODES.has(error.code);
+  }
+
+  return false;
+}
 
 // PRODUCTION NOTE:
 // For AWS RDS with high concurrency, consider:

@@ -2,6 +2,7 @@
  * Environment Configuration and Validation
  * This file validates required environment variables at startup
  */
+import { parseAllowedOrigins } from './cors';
 
 interface EnvConfig {
   // Required
@@ -65,9 +66,7 @@ function validateEnv(): EnvConfig {
   return {
     JWT_SECRET: jwtSecret,
     DATABASE_URL: process.env.DATABASE_URL!,
-    ALLOWED_ORIGINS: (process.env.ALLOWED_ORIGINS
-      ? process.env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim()).filter(Boolean)
-      : ['*']),
+    ALLOWED_ORIGINS: parseAllowedOrigins(process.env.ALLOWED_ORIGINS),
     NODE_ENV: (process.env.NODE_ENV as EnvConfig['NODE_ENV']) || 'development',
     PORT: parseInt(process.env.PORT || String(optionalEnvVars.PORT)),
     GOOGLE_MAPS_API_KEY: process.env.GOOGLE_MAPS_API_KEY,

@@ -95,8 +95,8 @@ backend/
 Required in production (`.env`):
 
 ```env
-DATABASE_URL="postgresql://..."
-DIRECT_URL="postgresql://..."
+DATABASE_URL="postgresql://...:6543/postgres?pgbouncer=true&connection_limit=1&connect_timeout=30"
+DIRECT_URL="postgresql://...:5432/postgres?connect_timeout=30"
 JWT_SECRET="your-strong-secret"
 NODE_ENV="production"
 ALLOWED_ORIGINS="https://your-frontend.com"
@@ -135,11 +135,12 @@ See [VERCEL_DEPLOYMENT.md](./VERCEL_DEPLOYMENT.md) for complete deployment guide
 ### Quick Deploy to Vercel
 
 1. **Set Environment Variables** in Vercel Dashboard:
-   - `DATABASE_URL` - PostgreSQL connection (pooled)
+   - `DATABASE_URL` - PostgreSQL pooled connection for serverless (`6543`, `pgbouncer=true`, `connection_limit=1`)
    - `DIRECT_URL` - PostgreSQL connection (direct)
    - `JWT_SECRET` - Strong random secret (32+ chars)
    - `ALLOWED_ORIGINS` - Your frontend URLs
    - `NODE_ENV` - `production`
+   - Node.js runtime - `20.x`
 
 2. **Deploy**:
    ```bash

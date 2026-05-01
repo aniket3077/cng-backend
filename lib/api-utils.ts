@@ -1,43 +1,12 @@
 import { NextResponse } from 'next/server';
-import { ALLOWED_ORIGINS } from './env';
+import { CORS_BASE_HEADERS, getCorsHeaders } from './cors';
 
 /**
- * Allowed origins for CORS
+ * Shared API headers. Origin is attached per request in middleware.
  */
-const ALLOW_ALL_ORIGINS = ALLOWED_ORIGINS.includes('*');
-const DEFAULT_ALLOWED_ORIGIN = ALLOW_ALL_ORIGINS ? '*' : ALLOWED_ORIGINS[0] || '';
+export { getCorsHeaders };
 
-/**
- * Get CORS headers based on request origin
- * Returns specific origin if allowed, otherwise rejects
- */
-export function getCorsHeaders(origin?: string | null): Record<string, string> {
-  let allowedOrigin = DEFAULT_ALLOWED_ORIGIN;
-  
-  if (origin) {
-    if (ALLOW_ALL_ORIGINS) {
-      allowedOrigin = origin;
-    } else if (ALLOWED_ORIGINS.includes(origin)) {
-      allowedOrigin = origin;
-    }
-  }
-
-  return {
-    'Access-Control-Allow-Origin': allowedOrigin,
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    'Access-Control-Allow-Credentials': 'false',
-  };
-}
-
-/**
- * Default CORS headers for development
- */
-export const corsHeaders = {
-  'Access-Control-Allow-Origin': DEFAULT_ALLOWED_ORIGIN,
-  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-};
+export const corsHeaders = CORS_BASE_HEADERS;
 
 /**
  * Standardized API response format

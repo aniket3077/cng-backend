@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
-import { prisma } from '@/lib/prisma';
+import { prisma, isPrismaUnavailableError } from '@/lib/prisma';
 import { signJwt } from '@/lib/auth';
 import { corsHeaders } from '@/lib/api-utils';
 import { rateLimiters } from '@/lib/rate-limiter';
@@ -77,6 +77,13 @@ export async function POST(request: NextRequest) {
       );
     } catch (error) {
       console.error('Login error:', error);
+      if (isPrismaUnavailableError(error)) {
+        securityLogger.logAuthenticationAttempt(req, 'unknown', false, 'Database unavailable');
+        return NextResponse.json(
+          { error: 'Authentication service temporarily unavailable' },
+          { status: 503, headers: corsHeaders }
+        );
+      }
       securityLogger.logAuthenticationAttempt(req, 'unknown', false, 'Internal server error');
       return NextResponse.json(
         { error: 'Internal server error' },
