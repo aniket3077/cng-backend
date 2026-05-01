@@ -2,16 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { PrismaClient } from '@prisma/client';
+import { corsHeaders } from '@/lib/api-utils';
 
 const prisma = new PrismaClient();
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || 'your_razorpay_secret_key';
-
-const corsHeaders = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-};
 
 // Subscription plan pricing configuration (must match customer/subscription route)
 const PLAN_CONFIG = {

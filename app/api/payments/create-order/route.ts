@@ -2,18 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import Razorpay from 'razorpay';
 import jwt from 'jsonwebtoken';
 import { prisma } from '@/lib/prisma';
+import { corsHeaders } from '@/lib/api-utils';
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 
 const razorpay = new Razorpay({
     key_id: process.env.RAZORPAY_KEY_ID || 'rzp_test_1234567890',
     key_secret: process.env.RAZORPAY_KEY_SECRET || 'your_razorpay_secret_key',
 });
-
-const corsHeaders = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-};
 
 // Subscription plan pricing configuration
 const PLAN_CONFIG = {

@@ -1,42 +1,25 @@
 import { NextResponse } from 'next/server';
+import { ALLOWED_ORIGINS } from './env';
 
 /**
  * Allowed origins for CORS
- * In production, replace with actual allowed origins
  */
-const RAW_ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS;
-const ALLOWED_ORIGINS = RAW_ALLOWED_ORIGINS?.split(',').map((o) => o.trim()).filter(Boolean) || [];
-
 const ALLOW_ALL_ORIGINS = ALLOWED_ORIGINS.includes('*');
+const DEFAULT_ALLOWED_ORIGIN = ALLOW_ALL_ORIGINS ? '*' : ALLOWED_ORIGINS[0] || '';
 
 /**
  * Get CORS headers based on request origin
  * Returns specific origin if allowed, otherwise rejects
  */
 export function getCorsHeaders(origin?: string | null): Record<string, string> {
-  const isProd = process.env.NODE_ENV === 'production';
-
-  let allowedOrigin: string = '';
+  let allowedOrigin = DEFAULT_ALLOWED_ORIGIN;
   
   if (origin) {
     if (ALLOW_ALL_ORIGINS) {
       allowedOrigin = origin;
     } else if (ALLOWED_ORIGINS.includes(origin)) {
       allowedOrigin = origin;
-    } else if (!isProd) {
-      // In development, allow localhost origins only
-      if (origin.startsWith('http://localhost:') || origin.startsWith('exp://')) {
-        allowedOrigin = origin;
-      } else {
-        allowedOrigin = ALLOWED_ORIGINS[0] || '';
-      }
-    } else {
-      // In production, reject unknown origins
-      allowedOrigin = ALLOWED_ORIGINS[0] || '';
     }
-  } else {
-    // No origin header (mobile apps, etc.)
-    allowedOrigin = isProd ? ALLOWED_ORIGINS[0] || '' : '';
   }
 
   return {
@@ -49,10 +32,9 @@ export function getCorsHeaders(origin?: string | null): Record<string, string> {
 
 /**
  * Default CORS headers for development
- * Note: Allows all origins for development
  */
 export const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Origin': DEFAULT_ALLOWED_ORIGIN,
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 };

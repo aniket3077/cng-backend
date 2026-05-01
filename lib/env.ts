@@ -7,11 +7,11 @@ interface EnvConfig {
   // Required
   JWT_SECRET: string;
   DATABASE_URL: string;
+  ALLOWED_ORIGINS: string[];
 
   // Optional with defaults
   NODE_ENV: 'development' | 'production' | 'test';
   PORT: number;
-  ALLOWED_ORIGINS: string[];
 
   // External services (optional)
   GOOGLE_MAPS_API_KEY?: string;
@@ -21,12 +21,12 @@ interface EnvConfig {
 const requiredEnvVars = [
   'JWT_SECRET',
   'DATABASE_URL',
+  'ALLOWED_ORIGINS',
 ] as const;
 
 const optionalEnvVars = {
   NODE_ENV: 'development',
   PORT: 3000,
-  ALLOWED_ORIGINS: 'https://cngbharat.com,https://www.cngbharat.com,https://cngmain.netlify.app',
   GOOGLE_MAPS_API_KEY: '',
   RAZORPAY_WEBHOOK_SECRET: '',
 } as const;
@@ -66,9 +66,12 @@ function validateEnv(): EnvConfig {
   return {
     JWT_SECRET: jwtSecret,
     DATABASE_URL: process.env.DATABASE_URL!,
+    ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS!
+      .split(',')
+      .map(origin => origin.trim())
+      .filter(Boolean),
     NODE_ENV: (process.env.NODE_ENV as EnvConfig['NODE_ENV']) || 'development',
     PORT: parseInt(process.env.PORT || String(optionalEnvVars.PORT)),
-    ALLOWED_ORIGINS: (process.env.ALLOWED_ORIGINS || optionalEnvVars.ALLOWED_ORIGINS).split(','),
     GOOGLE_MAPS_API_KEY: process.env.GOOGLE_MAPS_API_KEY,
     RAZORPAY_WEBHOOK_SECRET: process.env.RAZORPAY_WEBHOOK_SECRET,
   };

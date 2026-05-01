@@ -2,14 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
 import { prisma } from '@/lib/prisma';
 import { PLAN_CONFIG } from '@/lib/subscription';
+import { corsHeaders } from '@/lib/api-utils';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
-
-const corsHeaders = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-};
 
 export async function OPTIONS() {
     return NextResponse.json({}, { headers: corsHeaders });
