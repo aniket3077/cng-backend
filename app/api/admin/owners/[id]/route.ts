@@ -8,7 +8,7 @@ export async function OPTIONS() {
   return NextResponse.json({}, { headers: corsHeaders });
 }
 
-function verifyAdminToken(request: NextRequest): string | null {
+async function verifyAdminToken(request: NextRequest): Promise<string | null> {
   const token = extractToken(request);
   if (!token) {
     return null;
@@ -41,7 +41,7 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const adminId = verifyAdminToken(request);
+    const adminId = await verifyAdminToken(request);
     if (!adminId) {
       return NextResponse.json(
         { error: 'Unauthorized' },
@@ -88,7 +88,7 @@ export async function PUT(
   { params }: { params: { id: string } }
 ) {
   try {
-    const adminId = verifyAdminToken(request);
+    const adminId = await verifyAdminToken(request);
     if (!adminId) {
       return NextResponse.json(
         { error: 'Unauthorized' },
@@ -234,7 +234,7 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    const adminId = verifyAdminToken(request);
+    const adminId = await verifyAdminToken(request);
     if (!adminId) {
       return NextResponse.json(
         { error: 'Unauthorized' },
