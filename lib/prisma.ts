@@ -1,19 +1,43 @@
 import { PrismaClient } from '@prisma/client';
 
-// Prisma client singleton pattern for Next.js
-// Prevents multiple instances in development (hot reload)
+// Resilient Prisma initialization for serverless (Vercel)
+// If DATABASE_URL is not set or Prisma fails to init, export a Proxy
+// that throws a clear error when any model/method is accessed.
 
-const globalForPrisma = globalThis as unknown as {
-  prisma: PrismaClient | undefined;
-};
+const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
-export const prisma =
-  globalForPrisma.prisma ??
-  new PrismaClient({
-    log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
-  });
+let client: PrismaClient | undefined;
+let initError: Error | null = null;
 
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
+if (process.env.DATABASE_URL) {
+  try {
+    client = globalForPrisma.prisma ?? new PrismaClient({
+      log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
+    });
+
+    if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = client;
+  } catch (err) {
+    initError = err instanceof Error ? err : new Error(String(err));
+    client = undefined;
+    console.error('Prisma initialization error:', initError);
+  }
+} else {
+  initError = new Error('DATABASE_URL is not set. Prisma client unavailable.');
+}
+
+// Export a proxy so imports don't throw; attempts to use Prisma methods will throw a helpful error.
+export const prisma = new Proxy(
+  {},
+  {
+    get(_target, prop: string) {
+      if (client) {
+        // @ts-ignore - forward to real client
+        return (client as any)[prop];
+      }
+      throw initError || new Error('Prisma client not initialized');
+    },
+  }
+) as unknown as PrismaClient;
 
 // PRODUCTION NOTE:
 // For AWS RDS with high concurrency, consider:
