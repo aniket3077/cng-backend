@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
     // We allow route planning ONLY for authenticated users with active subscription
     let userId: string;
     try {
-      const payload = requireAuth(request);
+      const payload = await requireAuth(request);
       userId = payload.userId;
     } catch (e) {
       return NextResponse.json(

@@ -138,7 +138,7 @@ export async function POST(request: NextRequest) {
     let userId: string;
     try {
       // For voice query, we extract token manually from header if needed, but here we assume standard Bearer auth
-      const payload = requireAuth(request);
+      const payload = await requireAuth(request);
       userId = payload.userId;
     } catch (e) {
       return NextResponse.json(

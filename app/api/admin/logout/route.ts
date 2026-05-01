@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Verify token is valid before blacklisting
-    const decoded = verifyJwt(token);
+    const decoded = await verifyJwt(token);
     if (!decoded || decoded.role !== 'admin') {
       return NextResponse.json(
         { error: 'Invalid token' },

@@ -10,7 +10,7 @@ export async function OPTIONS() {
 
 export async function GET(request: NextRequest) {
   try {
-    const payload = requireAuth(request);
+    const payload = await requireAuth(request);
 
     if (payload.role !== 'customer') {
       return NextResponse.json(
@@ -68,7 +68,7 @@ const updateSchema = z.object({
 
 export async function PUT(request: NextRequest) {
   try {
-    const payload = requireAuth(request);
+    const payload = await requireAuth(request);
 
     if (payload.role !== 'customer') {
       return NextResponse.json(
