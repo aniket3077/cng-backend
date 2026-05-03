@@ -57,9 +57,14 @@ jobs:
             npx prisma migrate deploy
 
       - name: Health Check
-        run: |
-          sleep 10
-          curl -f https://api.cngbharat.com/api/health || exit 1
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            sleep 10
+            curl -f http://127.0.0.1:5000/api/health || exit 1
 
       - name: Notify on Failure
         if: failure()
