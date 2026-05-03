@@ -3,7 +3,6 @@ import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { verifyJwt } from '@/lib/auth';
 import { corsHeaders } from '@/lib/api-utils';
-import { requireActiveSubscription, checkSubscription } from '@/lib/subscription';
 
 const updateStatusSchema = z.object({
   stationId: z.string().optional(),
@@ -63,15 +62,6 @@ export async function GET(request: NextRequest) {
 // PUT - Update CNG availability status
 export async function PUT(request: NextRequest) {
   try {
-    // Check subscription first
-    const subscriptionCheck = await requireActiveSubscription(request);
-    if (subscriptionCheck) {
-      Object.entries(corsHeaders).forEach(([key, value]) => {
-        subscriptionCheck.headers.set(key, value);
-      });
-      return subscriptionCheck;
-    }
-
     const authHeader = request.headers.get('authorization');
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return NextResponse.json(
