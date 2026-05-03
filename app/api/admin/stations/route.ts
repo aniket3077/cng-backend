@@ -63,7 +63,7 @@ const updateStationSchema = z.object({
  */
 export async function GET(request: NextRequest) {
   try {
-    const adminId = verifyAdminToken(request);
+    const adminId = await verifyAdminToken(request);
     if (!adminId) {
       return NextResponse.json(
         { error: 'Unauthorized' },
@@ -76,6 +76,9 @@ export async function GET(request: NextRequest) {
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '20'))); // Max 100 items per page
     const search = searchParams.get('search') || '';
     const status = searchParams.get('status') || '';
+    const approvalStatus = searchParams.get('approvalStatus') || '';
+    const verified = searchParams.get('verified');
+    const cngAvailable = searchParams.get('cngAvailable');
 
     const skip = (page - 1) * limit;
 
@@ -83,14 +86,18 @@ export async function GET(request: NextRequest) {
     const where: any = {};
     if (search) {
       where.OR = [
-        { name: { contains: search } },
-        { city: { contains: search } },
-        { state: { contains: search } },
-        { address: { contains: search } },
+        { name: { contains: search, mode: 'insensitive' } },
+        { city: { contains: search, mode: 'insensitive' } },
+        { state: { contains: search, mode: 'insensitive' } },
+        { address: { contains: search, mode: 'insensitive' } },
       ];
     }
     if (status === 'verified') where.isVerified = true;
     if (status === 'unverified') where.isVerified = false;
+    if (status === 'pending' || status === 'approved' || status === 'rejected') where.approvalStatus = status;
+    if (approvalStatus) where.approvalStatus = approvalStatus;
+    if (verified !== null) where.isVerified = verified === 'true';
+    if (cngAvailable !== null) where.cngAvailable = cngAvailable === 'true';
 
     const [stations, total] = await Promise.all([
       prisma.station.findMany({
@@ -131,7 +138,7 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    const adminId = verifyAdminToken(request);
+    const adminId = await verifyAdminToken(request);
     if (!adminId) {
       return NextResponse.json(
         { error: 'Unauthorized' },
@@ -209,7 +216,7 @@ export async function POST(request: NextRequest) {
  */
 export async function PUT(request: NextRequest) {
   try {
-    const adminId = verifyAdminToken(request);
+    const adminId = await verifyAdminToken(request);
     if (!adminId) {
       return NextResponse.json(
         { error: 'Unauthorized' },
@@ -251,7 +258,7 @@ export async function PUT(request: NextRequest) {
  */
 export async function DELETE(request: NextRequest) {
   try {
-    const adminId = verifyAdminToken(request);
+    const adminId = await verifyAdminToken(request);
     if (!adminId) {
       return NextResponse.json(
         { error: 'Unauthorized' },

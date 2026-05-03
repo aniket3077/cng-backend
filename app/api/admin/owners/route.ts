@@ -31,7 +31,7 @@ function verifyAdminToken(request: NextRequest): string | null {
 // GET - List all station owners with filters and pagination
 export async function GET(request: NextRequest) {
   try {
-    const adminId = verifyAdminToken(request);
+    const adminId = await verifyAdminToken(request);
     if (!adminId) {
       return NextResponse.json(
         { error: 'Unauthorized' },
@@ -43,16 +43,24 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '20');
     const search = searchParams.get('search');
+    const status = searchParams.get('status');
+    const kycStatus = searchParams.get('kycStatus');
 
     const skip = (page - 1) * limit;
 
     const where: any = {};
+    if (status) {
+      where.status = status;
+    }
+    if (kycStatus) {
+      where.kycStatus = kycStatus;
+    }
     if (search) {
       where.OR = [
-        { name: { contains: search } },
-        { email: { contains: search } },
-        { phone: { contains: search } },
-        { companyName: { contains: search } },
+        { name: { contains: search, mode: 'insensitive' } },
+        { email: { contains: search, mode: 'insensitive' } },
+        { phone: { contains: search, mode: 'insensitive' } },
+        { companyName: { contains: search, mode: 'insensitive' } },
       ];
     }
 
@@ -115,7 +123,7 @@ export async function GET(request: NextRequest) {
 // PUT - Update station owner status/details
 export async function PUT(request: NextRequest) {
   try {
-    const adminId = verifyAdminToken(request);
+    const adminId = await verifyAdminToken(request);
     if (!adminId) {
       return NextResponse.json(
         { error: 'Unauthorized' },
@@ -241,7 +249,7 @@ export async function PUT(request: NextRequest) {
 // DELETE - Delete station owner (soft delete by suspending)
 export async function DELETE(request: NextRequest) {
   try {
-    const adminId = verifyAdminToken(request);
+    const adminId = await verifyAdminToken(request);
     if (!adminId) {
       return NextResponse.json(
         { error: 'Unauthorized' },

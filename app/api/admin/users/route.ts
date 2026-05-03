@@ -31,7 +31,7 @@ function verifyAdminToken(request: NextRequest): string | null {
 // GET - List all users with filters and pagination
 export async function GET(request: NextRequest) {
     try {
-        const adminId = verifyAdminToken(request);
+        const adminId = await verifyAdminToken(request);
         if (!adminId) {
             return NextResponse.json(
                 { error: 'Unauthorized' },
@@ -105,7 +105,7 @@ export async function GET(request: NextRequest) {
 // PUT - Update user details (subscription)
 export async function PUT(request: NextRequest) {
     try {
-        const adminId = verifyAdminToken(request);
+        const adminId = await verifyAdminToken(request);
         if (!adminId) {
             return NextResponse.json(
                 { error: 'Unauthorized' },
@@ -158,7 +158,7 @@ export async function PUT(request: NextRequest) {
 // DELETE - Delete user
 export async function DELETE(request: NextRequest) {
     try {
-        const adminId = verifyAdminToken(request);
+        const adminId = await verifyAdminToken(request);
         if (!adminId) {
             return NextResponse.json(
                 { error: 'Unauthorized' },
