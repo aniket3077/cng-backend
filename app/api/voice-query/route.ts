@@ -109,7 +109,14 @@ async function getApprovedStations() {
 function parseIntent(query: string): string {
   const queryLower = query.toLowerCase();
 
-  if (queryLower.includes('nearby') || queryLower.includes('near me') || queryLower.includes('close')) {
+  if (
+    queryLower.includes('nearby') ||
+    queryLower.includes('near me') ||
+    queryLower.includes('close') ||
+    queryLower.includes('nearest') ||
+    queryLower.includes('closest') ||
+    queryLower.includes('show nearest')
+  ) {
     return 'nearby_search';
   }
 
@@ -198,6 +205,8 @@ export async function POST(request: NextRequest) {
 
           // Sort by distance
           stations.sort((a: StationWithDistance, b: StationWithDistance) => (a.distance || 0) - (b.distance || 0));
+
+          nearestStation = stations[0] || null;
 
           if (stations.length > 0) {
             response = `Found ${stations.length} CNG station${stations.length > 1 ? 's' : ''} within 10 kilometers. The nearest one is ${stations[0].name} at ${stations[0].distance?.toFixed(1)} km away.`;
