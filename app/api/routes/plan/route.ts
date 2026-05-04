@@ -20,6 +20,7 @@ const routePlanSchema = z.object({
   fuelType: z.enum(['CNG']).optional(),
   avoidTolls: z.boolean().optional().default(false),
   avoidHighways: z.boolean().optional().default(false),
+  googleMapsApiKey: z.string().optional(),
 });
 
 /**
@@ -72,11 +73,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { origin, destination, travelMode, fuelType, avoidTolls, avoidHighways } = validation.data;
+    const { origin, destination, travelMode, fuelType, avoidTolls, avoidHighways, googleMapsApiKey: requestApiKey } = validation.data;
 
     console.log('Route planning request:', { origin, destination, travelMode, fuelType });
 
-    const googleMapsApiKey = process.env.GOOGLE_MAPS_API_KEY;
+    const googleMapsApiKey = requestApiKey || process.env.GOOGLE_MAPS_API_KEY;
     if (!googleMapsApiKey) {
       console.error('GOOGLE_MAPS_API_KEY is not configured in environment variables');
       console.warn('Falling back to simple route because Google Maps key is missing');
@@ -88,7 +89,8 @@ export async function POST(request: NextRequest) {
       destination,
       travelMode,
       avoidTolls,
-      avoidHighways
+      avoidHighways,
+      googleMapsApiKey
     );
 
     console.log('Route found, polyline length:', directions.route.overview_polyline.points.length);
@@ -142,10 +144,11 @@ async function getGoogleDirections(
   destination: { lat: number; lng: number },
   mode: string,
   avoidTolls: boolean,
-  avoidHighways: boolean
+  avoidHighways: boolean,
+  googleMapsApiKey?: string
 ) {
   try {
-    const apiKey = process.env.GOOGLE_MAPS_API_KEY || '';
+    const apiKey = googleMapsApiKey || process.env.GOOGLE_MAPS_API_KEY || '';
 
     if (!apiKey) {
       console.error('Google Maps API key is missing!');
