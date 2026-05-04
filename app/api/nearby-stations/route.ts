@@ -5,8 +5,8 @@ import { calculateHaversineDistance, corsHeaders } from '@/lib/api-utils';
 export const dynamic = 'force-dynamic';
 
 const DEFAULT_RADIUS_METERS = 25_000;
-const DEFAULT_LIMIT = 5;
-const MAX_LIMIT = 5;
+const DEFAULT_LIMIT = 30;
+const MAX_LIMIT = 60;
 const MAX_DIRECTION_CANDIDATES = 12;
 
 const nearbyStationsSchema = z
@@ -16,11 +16,13 @@ const nearbyStationsSchema = z
     radius: z.coerce.number().int().min(100).max(50_000).optional(),
     radiusMeters: z.coerce.number().int().min(100).max(50_000).optional(),
     limit: z.coerce.number().int().min(1).max(MAX_LIMIT).optional(),
+    includeTravelTimes: z.coerce.boolean().optional(),
   })
-  .transform(({ radius, radiusMeters, limit, ...rest }) => ({
+  .transform(({ radius, radiusMeters, limit, includeTravelTimes, ...rest }) => ({
     ...rest,
     radiusMeters: radiusMeters ?? radius ?? DEFAULT_RADIUS_METERS,
     limit: limit ?? DEFAULT_LIMIT,
+    includeTravelTimes: includeTravelTimes ?? false,
   }));
 
 type NearbyStationsInput = z.infer<typeof nearbyStationsSchema>;
@@ -28,6 +30,7 @@ type NearbyStationsInput = z.infer<typeof nearbyStationsSchema>;
 interface GooglePlacesNearbyResponse {
   status: string;
   error_message?: string;
+  next_page_token?: string;
   results?: GooglePlaceResult[];
 }
 
@@ -152,6 +155,42 @@ async function handleNearbyStationsRequest(input: NearbyStationsInput) {
     );
   }
 
+  if (!input.includeTravelTimes) {
+    const stations = candidates
+      .sort((a, b) => a.distanceKm - b.distanceKm)
+      .slice(0, input.limit)
+      .map((station, index) => ({
+        rank: index + 1,
+        placeId: station.placeId,
+        name: station.name,
+        coordinates: station.coordinates,
+        rating: station.rating,
+        openNow: station.openNow,
+        openStatus: getOpenStatus(station.openNow),
+        distanceKm: roundToTwoDecimals(station.distanceKm),
+        routeDistanceKm: roundToTwoDecimals(station.distanceKm),
+        routeDistanceText: `${roundToTwoDecimals(station.distanceKm)} km`,
+        travelTime: {
+          text: null,
+          seconds: null,
+          trafficAware: false,
+        },
+        address: station.address,
+      }));
+
+    return NextResponse.json(
+      {
+        success: true,
+        count: stations.length,
+        userLocation: { lat: input.lat, lng: input.lng },
+        searchRadiusMeters: input.radiusMeters,
+        ranking: ['distanceKm'],
+        stations,
+      },
+      { headers: corsHeaders }
+    );
+  }
+
   const rankedStations = await rankStationsByTravelTime(input, candidates, apiKey);
 
   return NextResponse.json(
@@ -198,59 +237,87 @@ async function fetchNearbyStationCandidates(
   input: NearbyStationsInput,
   apiKey: string
 ): Promise<StationCandidate[]> {
-  const nearbySearchUrl = new URL('https://maps.googleapis.com/maps/api/place/nearbysearch/json');
-  nearbySearchUrl.searchParams.set('location', `${input.lat},${input.lng}`);
-  nearbySearchUrl.searchParams.set('rankby', 'distance');
-  nearbySearchUrl.searchParams.set('type', 'gas_station');
-  nearbySearchUrl.searchParams.set('keyword', 'CNG');
-  nearbySearchUrl.searchParams.set('language', 'en');
-  nearbySearchUrl.searchParams.set('key', apiKey);
-
-  const response = await fetch(nearbySearchUrl.toString(), {
-    cache: 'no-store',
-  });
-
-  if (!response.ok) {
-    throw new HttpError(502, `Google Places API request failed with HTTP ${response.status}`);
-  }
-
-  const data = (await response.json()) as GooglePlacesNearbyResponse;
-
-  if (data.status === 'ZERO_RESULTS') {
-    return [];
-  }
-
-  if (data.status !== 'OK') {
-    throw new HttpError(
-      502,
-      data.error_message
-        ? `Google Places API error: ${data.status} - ${data.error_message}`
-        : `Google Places API error: ${data.status}`
-    );
-  }
-
-  const maxDistanceKm = input.radiusMeters / 1000;
   const uniqueStations = new Map<string, StationCandidate>();
+  let nextPageToken: string | undefined;
+  let pageCount = 0;
+  const maxPages = Math.min(3, Math.ceil(input.limit / 20));
+  const maxDistanceKm = input.radiusMeters / 1000;
 
-  for (const place of data.results ?? []) {
-    const normalizedStation = normalizeStationCandidate(place, input.lat, input.lng);
+  while (pageCount < maxPages && uniqueStations.size < input.limit) {
+    const nearbySearchUrl = new URL('https://maps.googleapis.com/maps/api/place/nearbysearch/json');
 
-    if (!normalizedStation) {
+    if (nextPageToken) {
+      nearbySearchUrl.searchParams.set('pagetoken', nextPageToken);
+      await sleep(1800);
+    } else {
+      nearbySearchUrl.searchParams.set('location', `${input.lat},${input.lng}`);
+      nearbySearchUrl.searchParams.set('rankby', 'distance');
+      nearbySearchUrl.searchParams.set('type', 'gas_station');
+      nearbySearchUrl.searchParams.set('keyword', 'CNG');
+      nearbySearchUrl.searchParams.set('language', 'en');
+    }
+
+    nearbySearchUrl.searchParams.set('key', apiKey);
+
+    const response = await fetch(nearbySearchUrl.toString(), {
+      cache: 'no-store',
+    });
+
+    if (!response.ok) {
+      throw new HttpError(502, `Google Places API request failed with HTTP ${response.status}`);
+    }
+
+    const data = (await response.json()) as GooglePlacesNearbyResponse;
+
+    if (data.status === 'ZERO_RESULTS') {
+      break;
+    }
+
+    if (data.status === 'INVALID_REQUEST' && nextPageToken) {
+      await sleep(1200);
       continue;
     }
 
-    if (normalizedStation.distanceKm > maxDistanceKm) {
-      continue;
+    if (data.status !== 'OK') {
+      throw new HttpError(
+        502,
+        data.error_message
+          ? `Google Places API error: ${data.status} - ${data.error_message}`
+          : `Google Places API error: ${data.status}`
+      );
     }
 
-    if (!uniqueStations.has(normalizedStation.placeId)) {
-      uniqueStations.set(normalizedStation.placeId, normalizedStation);
+    for (const place of data.results ?? []) {
+      const normalizedStation = normalizeStationCandidate(place, input.lat, input.lng);
+
+      if (!normalizedStation) {
+        continue;
+      }
+
+      if (normalizedStation.distanceKm > maxDistanceKm) {
+        continue;
+      }
+
+      if (!uniqueStations.has(normalizedStation.placeId)) {
+        uniqueStations.set(normalizedStation.placeId, normalizedStation);
+      }
+    }
+
+    nextPageToken = data.next_page_token;
+    pageCount += 1;
+
+    if (!nextPageToken) {
+      break;
     }
   }
 
   return Array.from(uniqueStations.values())
     .sort((a, b) => a.distanceKm - b.distanceKm)
-    .slice(0, MAX_DIRECTION_CANDIDATES);
+    .slice(0, input.includeTravelTimes ? MAX_DIRECTION_CANDIDATES : input.limit);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function normalizeStationCandidate(
