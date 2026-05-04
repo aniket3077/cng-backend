@@ -92,6 +92,11 @@ export async function POST(request: NextRequest) {
         lng: station.lng,
         fuelTypes: station.fuelTypes,
         isPartner: station.isPartner,
+        cngAvailable: station.cngAvailable,
+        cngQuantityKg: station.cngQuantityKg,
+        crowdLevel: station.crowdLevel,
+        crowdCount: station.crowdCount,
+        estimatedWaitTime: station.estimatedWaitTime,
         rating: 0,
         distance: distance ? parseFloat(distance.toFixed(2)) : null,
       };

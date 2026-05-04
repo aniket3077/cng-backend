@@ -86,7 +86,25 @@ export async function GET(request: NextRequest) {
       ],
       skip,
       take: limit,
-      include: {
+      select: {
+        id: true,
+        name: true,
+        address: true,
+        city: true,
+        state: true,
+        postalCode: true,
+        lat: true,
+        lng: true,
+        fuelTypes: true,
+        isPartner: true,
+        phone: true,
+        openingHours: true,
+        cngAvailable: true,
+        cngQuantityKg: true,
+        crowdLevel: true,
+        crowdCount: true,
+        estimatedWaitTime: true,
+        crowdUpdatedAt: true,
         owner: {
           select: {
             name: true,

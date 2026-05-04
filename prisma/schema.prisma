@@ -62,6 +62,10 @@ model Station {
   cngAvailable      Boolean        @default(true)
   cngQuantityKg     Float?         @default(0)
   cngUpdatedAt      DateTime?
+  crowdLevel        String?        @default("low") // low, medium, high
+  crowdCount        Int?           @default(0)
+  estimatedWaitTime Int?           @default(0) // in minutes
+  crowdUpdatedAt    DateTime?
   ownerId           String?
   approvalStatus    String         @default("pending")
   createdAt         DateTime       @default(now())
@@ -78,6 +82,7 @@ model Station {
   @@index([isVerified])
   @@index([ownerId])
   @@index([approvalStatus])
+  @@index([crowdLevel])
 }
 
 // Admin model
