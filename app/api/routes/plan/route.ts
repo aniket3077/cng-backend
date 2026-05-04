@@ -79,10 +79,7 @@ export async function POST(request: NextRequest) {
     const googleMapsApiKey = process.env.GOOGLE_MAPS_API_KEY;
     if (!googleMapsApiKey) {
       console.error('GOOGLE_MAPS_API_KEY is not configured in environment variables');
-      return NextResponse.json(
-        { error: 'GOOGLE_MAPS_API_KEY is not configured' },
-        { status: 500 }
-      );
+      console.warn('Falling back to simple route because Google Maps key is missing');
     }
 
     // Get route from Google Directions API
@@ -93,14 +90,6 @@ export async function POST(request: NextRequest) {
       avoidTolls,
       avoidHighways
     );
-
-    if (!directions) {
-      console.error('No directions found for route:', { origin, destination });
-      return NextResponse.json(
-        { error: 'Unable to find route between origin and destination' },
-        { status: 404 }
-      );
-    }
 
     console.log('Route found, polyline length:', directions.route.overview_polyline.points.length);
 
@@ -160,7 +149,7 @@ async function getGoogleDirections(
 
     if (!apiKey) {
       console.error('Google Maps API key is missing!');
-      return null;
+      return buildFallbackDirections(origin, destination, mode);
     }
 
     const originStr = `${origin.lat},${origin.lng}`;
@@ -183,7 +172,7 @@ async function getGoogleDirections(
 
     if (!response.ok) {
       console.error('Google Directions API HTTP error:', response.status, response.statusText);
-      return null;
+      return buildFallbackDirections(origin, destination, mode);
     }
 
     const data = await response.json();
@@ -196,7 +185,7 @@ async function getGoogleDirections(
         error_message: data.error_message,
         available_travel_modes: data.available_travel_modes
       });
-      return null;
+      return buildFallbackDirections(origin, destination, mode);
     }
 
     if (data.routes && data.routes.length > 0) {
@@ -208,11 +197,54 @@ async function getGoogleDirections(
     }
 
     console.warn('No routes found in response');
-    return null;
+    return buildFallbackDirections(origin, destination, mode);
   } catch (error) {
     console.error('Google Directions API error:', error);
-    return null;
+    return buildFallbackDirections(origin, destination, mode);
   }
+}
+
+function buildFallbackDirections(
+  origin: { lat: number; lng: number },
+  destination: { lat: number; lng: number },
+  mode: string
+) {
+  const distanceKm = calculateHaversineDistance(origin.lat, origin.lng, destination.lat, destination.lng);
+  const durationMinutes = Math.max(1, Math.ceil(distanceKm * (mode === 'walking' ? 12 : 3)));
+
+  return {
+    route: {
+      overview_polyline: { points: '' },
+      bounds: {
+        northeast: {
+          lat: Math.max(origin.lat, destination.lat),
+          lng: Math.max(origin.lng, destination.lng),
+        },
+        southwest: {
+          lat: Math.min(origin.lat, destination.lat),
+          lng: Math.min(origin.lng, destination.lng),
+        },
+      },
+      legs: [
+        {
+          distance: {
+            text: `${distanceKm.toFixed(1)} km`,
+            value: Math.round(distanceKm * 1000),
+          },
+          duration: {
+            text: `${durationMinutes} min`,
+            value: durationMinutes * 60,
+          },
+          start_address: 'Current Location',
+          end_address: 'Destination',
+          steps: [],
+        },
+      ],
+      warnings: ['Using fallback route because live directions are unavailable'],
+      polyline: '',
+    },
+    status: 'FALLBACK',
+  };
 }
 
 /**
@@ -226,7 +258,14 @@ async function findStationsAlongRoute(
 ) {
   try {
     // Decode polyline to get route coordinates
-    const routePoints = decodePolyline(polyline.points);
+    let routePoints = decodePolyline(polyline.points);
+
+    if (routePoints.length < 2) {
+      routePoints = [
+        { latitude: origin.lat, longitude: origin.lng },
+        { latitude: destination.lat, longitude: destination.lng },
+      ];
+    }
 
     // Calculate bounding box for the route with padding
     const lats = routePoints.map(p => p.latitude);
