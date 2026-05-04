@@ -49,6 +49,7 @@ export async function POST(request: NextRequest) {
     const passwordHash = await bcrypt.hash(password, 12);
 
     // Create user with vehicle in a transaction
+    console.log('Creating user with data:', { name, email, phone, vehicleNo });
     const user = await prisma.user.create({
       data: {
         name,
@@ -92,9 +93,29 @@ export async function POST(request: NextRequest) {
     );
   } catch (error) {
     console.error('Signup error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500, headers: corsHeaders }
-    );
+    console.error('Error details:', {
+      message: error instanceof Error ? error.message : 'Unknown error',
+      code: (error as any)?.code,
+      meta: (error as any)?.meta,
+    });
+      // Return more specific error messages for debugging
+      let errorMessage = 'Internal server error';
+      let statusCode = 500;
+
+      if (error instanceof Error) {
+        if (error.message.includes('Unique constraint failed')) {
+          errorMessage = 'Email already registered';
+          statusCode = 409;
+        } else if (error.message.includes('prisma')) {
+          errorMessage = 'Database error: ' + error.message;
+        } else {
+          errorMessage = error.message;
+        }
+      }
+
+      return NextResponse.json(
+        { error: errorMessage },
+        { status: statusCode, headers: corsHeaders }
+      );
   }
 }
