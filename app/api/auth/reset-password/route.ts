@@ -46,12 +46,16 @@ export async function POST(request: NextRequest) {
 
       const { email } = validation.data;
 
-      // Check if user exists (for now, we'll check StationOwner table since that's what we have)
+      // Check if user exists in both User and StationOwner tables
+      const user = await prisma.user.findUnique({
+        where: { email },
+      });
+
       const owner = await prisma.stationOwner.findUnique({
         where: { email },
       });
 
-      if (!owner) {
+      if (!user && !owner) {
         return NextResponse.json(
           { error: 'User not found' },
           { status: 404, headers: corsHeaders }
@@ -157,14 +161,30 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      // Check user type again
+      const user = await prisma.user.findUnique({
+        where: { email },
+      });
+
+      const owner = await prisma.stationOwner.findUnique({
+        where: { email },
+      });
+
       // Hash new password
       const passwordHash = await bcrypt.hash(newPassword, 10);
 
-      // Update password in StationOwner table
-      await prisma.stationOwner.update({
-        where: { email },
-        data: { passwordHash },
-      });
+      // Update password in appropriate table
+      if (user) {
+        await prisma.user.update({
+          where: { email },
+          data: { passwordHash },
+        });
+      } else if (owner) {
+        await prisma.stationOwner.update({
+          where: { email },
+          data: { passwordHash },
+        });
+      }
 
       // Remove OTP from storage
       otpStorage.delete(email);
