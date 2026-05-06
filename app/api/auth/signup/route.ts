@@ -5,6 +5,16 @@ import { prisma } from '@/lib/prisma';
 import { signJwt } from '@/lib/auth';
 import { corsHeaders } from '@/lib/api-utils';
 
+// Generate a random 8-character referral code
+function generateReferralCode(): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let code = '';
+  for (let i = 0; i < 8; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code;
+}
+
 const signupSchema = z.object({
   name: z.string().min(2).max(100).trim(),
   email: z.string().email().trim().toLowerCase(),
@@ -13,6 +23,7 @@ const signupSchema = z.object({
   password: z.string()
     .min(6, 'Password must be at least 6 characters')
     .max(100),
+  referralCode: z.string().optional(),
 });
 
 export async function OPTIONS() {
@@ -31,7 +42,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { name, email, phone, vehicleNo, password } = validation.data;
+    const { name, email, phone, vehicleNo, password, referralCode } = validation.data;
 
     // Check if user already exists
     const existingUser = await prisma.user.findUnique({
@@ -48,8 +59,32 @@ export async function POST(request: NextRequest) {
     // Hash password
     const passwordHash = await bcrypt.hash(password, 12);
 
+    // Handle referral code if provided
+    let referredBy = null;
+    if (referralCode) {
+      const referrer = await prisma.user.findUnique({
+        where: { referralCode: referralCode.toUpperCase() },
+      });
+      
+      if (referrer) {
+        referredBy = referrer.id;
+        // Create referral record
+        await prisma.referral.create({
+          data: {
+            referrerId: referrer.id,
+            referralCode: referralCode.toUpperCase(),
+            status: 'pending',
+            rewardAmount: 50,
+          },
+        });
+      }
+    }
+
+    // Generate referral code for new user
+    const newUserReferralCode = generateReferralCode();
+
     // Create user with vehicle in a transaction
-    console.log('Creating user with data:', { name, email, phone, vehicleNo });
+    console.log('Creating user with data:', { name, email, phone, vehicleNo, referralCode });
     const user = await prisma.user.create({
       data: {
         name,
@@ -57,6 +92,8 @@ export async function POST(request: NextRequest) {
         phone,
         passwordHash,
         role: 'customer',
+        referralCode: newUserReferralCode,
+        referredBy,
         vehicles: {
           create: {
             plate: vehicleNo,

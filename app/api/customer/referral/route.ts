@@ -101,9 +101,18 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST - Apply referral code during signup
+// POST - Apply referral code
 export async function POST(request: NextRequest) {
   try {
+    const payload = await requireAuth(request);
+
+    if (payload.role !== 'customer') {
+      return NextResponse.json(
+        { error: 'Forbidden' },
+        { status: 403, headers: corsHeaders }
+      );
+    }
+
     const body = await request.json();
     const { referralCode } = body;
 
@@ -114,47 +123,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Find referral by code
-    const referral = await prisma.referral.findUnique({
-      where: { referralCode },
-      include: {
-        referrer: true,
-        referred: true,
-      },
+    // Find user with this referral code
+    const referrer = await prisma.user.findUnique({
+      where: { referralCode: referralCode.toUpperCase() },
     });
 
-    if (!referral) {
+    if (!referrer) {
       return NextResponse.json(
         { error: 'Invalid referral code' },
         { status: 404, headers: corsHeaders }
       );
     }
 
-    if (referral.status === 'completed') {
+    // Prevent self-referral
+    if (referrer.id === payload.userId) {
       return NextResponse.json(
-        { error: 'Referral code already used' },
+        { error: 'Cannot use your own referral code' },
         { status: 400, headers: corsHeaders }
       );
     }
 
-    // Get current user (the one applying the code)
-    const token = request.headers.get('authorization')?.replace('Bearer ', '');
-    if (!token) {
-      return NextResponse.json(
-        { error: 'Authorization required' },
-        { status: 401, headers: corsHeaders }
-      );
-    }
-
-    const payload = await requireAuth(request);
-    if (payload.role !== 'customer') {
-      return NextResponse.json(
-        { error: 'Forbidden' },
-        { status: 403, headers: corsHeaders }
-      );
-    }
-
-    // Check if user already has a referral
+    // Check if current user already has a referral
     const existingReferral = await prisma.referral.findFirst({
       where: { referredId: payload.userId },
     });
@@ -166,39 +155,40 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Update referral with referred user
-    const updatedReferral = await prisma.referral.update({
-      where: { id: referral.id },
+    // Create new referral record
+    const newReferral = await prisma.referral.create({
       data: {
+        referrerId: referrer.id,
         referredId: payload.userId,
+        referralCode: referralCode.toUpperCase(),
         status: 'completed',
+        rewardAmount: 50,
         completedAt: new Date(),
       },
     });
 
-    // Update user with referral info
+    // Update current user with referral info
     await prisma.user.update({
       where: { id: payload.userId },
-      data: { referredBy: referral.referrerId },
+      data: { referredBy: referrer.id },
     });
 
     // Create earning for referrer
     const earning = await prisma.referralEarning.create({
       data: {
-        userId: referral.referrerId,
-        referralId: updatedReferral.id,
-        amount: referral.rewardAmount,
+        userId: referrer.id,
+        referralId: newReferral.id,
+        amount: 50,
         type: 'referral',
         status: 'pending',
-        description: `Referral bonus for ${payload.userId}`,
-        availableAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // Available after 7 days
+        earnedAt: new Date(),
       },
     });
 
     return NextResponse.json(
       {
-        message: 'Referral code applied successfully',
-        referral: updatedReferral,
+        message: 'Referral code applied successfully!',
+        referral: newReferral,
         earning,
       },
       { headers: corsHeaders }
