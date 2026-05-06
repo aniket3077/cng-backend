@@ -28,7 +28,7 @@ model User {
   
   vehicles            Vehicle[]
   referralsGiven      Referral[]         @relation("Referrer")
-  referralReceived   Referral?          @relation("Referred")
+  referralReceived   Referral[]          @relation("Referred")
   earnings            ReferralEarning[]
   payoutRequests      PayoutRequest[]
   
