@@ -17,12 +17,14 @@ const nearbyStationsSchema = z
     radiusMeters: z.coerce.number().int().min(100).max(50_000).optional(),
     limit: z.coerce.number().int().min(1).max(MAX_LIMIT).optional(),
     includeTravelTimes: z.coerce.boolean().optional(),
+    googleOnly: z.coerce.boolean().optional(),
   })
-  .transform(({ radius, radiusMeters, limit, includeTravelTimes, ...rest }) => ({
+  .transform(({ radius, radiusMeters, limit, includeTravelTimes, googleOnly, ...rest }) => ({
     ...rest,
     radiusMeters: radiusMeters ?? radius ?? DEFAULT_RADIUS_METERS,
     limit: limit ?? DEFAULT_LIMIT,
     includeTravelTimes: includeTravelTimes ?? false,
+    googleOnly: googleOnly ?? false,
   }));
 
 type NearbyStationsInput = z.infer<typeof nearbyStationsSchema>;
@@ -140,7 +142,29 @@ export async function GET(request: NextRequest) {
 
 async function handleNearbyStationsRequest(input: NearbyStationsInput) {
   const apiKey = getGoogleMapsApiKey();
-  const candidates = await fetchNearbyStationCandidates(input, apiKey);
+  let candidates: StationCandidate[] = [];
+  try {
+    candidates = await fetchNearbyStationCandidates(input, apiKey);
+  } catch (err) {
+    // If Google is unavailable and caller explicitly requested Google-only results,
+    // return an empty successful response instead of an error so the client can
+    // show an empty map or message.
+    if (input.googleOnly && err instanceof HttpError && err.status === 502) {
+      return NextResponse.json(
+        {
+          success: true,
+          count: 0,
+          userLocation: { lat: input.lat, lng: input.lng },
+          searchRadiusMeters: input.radiusMeters,
+          stations: [],
+          googlePlacesUnavailable: true,
+        },
+        { headers: corsHeaders }
+      );
+    }
+
+    throw err;
+  }
 
   if (candidates.length === 0) {
     return NextResponse.json(
