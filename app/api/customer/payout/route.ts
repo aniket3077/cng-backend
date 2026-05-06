@@ -31,16 +31,46 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // For now, return mock data since Prisma models aren't properly generated
-    const mockData = {
-      availableBalance: 0,
-      totalEarnings: 0,
-      pendingEarnings: 0,
-      earnings: [],
-      payoutRequests: [],
-    };
+    // Get user's earnings and payout history
+    const [user, earnings, payoutRequests] = await Promise.all([
+      prisma.user.findUnique({
+        where: { id: payload.userId },
+      }),
+      prisma.referralEarning.findMany({
+        where: { userId: payload.userId },
+        orderBy: { id: 'desc' as const },
+      }),
+      prisma.payoutRequest.findMany({
+        where: { userId: payload.userId },
+        orderBy: { id: 'desc' as const },
+      }),
+    ]);
 
-    return NextResponse.json(mockData, { headers: corsHeaders });
+    if (!user) {
+      return NextResponse.json(
+        { error: 'User not found' },
+        { status: 404, headers: corsHeaders }
+      );
+    }
+
+    const availableBalance = earnings
+      .filter((earning: any) => earning.status === 'available')
+      .reduce((sum: number, earning: any) => sum + earning.amount, 0);
+
+    const totalEarnings = earnings
+      .reduce((sum: number, earning: any) => sum + earning.amount, 0);
+
+    const pendingEarnings = earnings
+      .filter((earning: any) => earning.status === 'pending')
+      .reduce((sum: number, earning: any) => sum + earning.amount, 0);
+
+    return NextResponse.json({
+      availableBalance,
+      totalEarnings,
+      pendingEarnings,
+      earnings,
+      payoutRequests,
+    }, { headers: corsHeaders });
   } catch (error) {
     console.error('Payout GET error:', error);
     return NextResponse.json(
@@ -74,21 +104,77 @@ export async function POST(request: NextRequest) {
 
     const { amount, payoutMethod, accountDetails } = validation.data;
 
-    // For now, just return a success message without actual payout processing
-    // This will be implemented once the database models are properly set up
-    return NextResponse.json(
-      {
-        message: 'Payout request submitted successfully',
-        payoutRequest: {
-          id: 'mock-' + Date.now(),
+    // Check if user has sufficient balance
+    const userEarnings = await prisma.referralEarning.findMany({
+      where: { userId: payload.userId },
+    });
+
+    const availableBalance = userEarnings
+      .filter((earning: any) => earning.status === 'available')
+      .reduce((sum: number, earning: any) => sum + earning.amount, 0);
+
+    if (availableBalance < amount) {
+      return NextResponse.json(
+        { error: 'Insufficient balance' },
+        { status: 400, headers: corsHeaders }
+      );
+    }
+
+    try {
+      // Create payout request record (will be processed by admin)
+      const payoutRequest = await prisma.payoutRequest.create({
+        data: {
+          userId: payload.userId,
           amount,
-          status: 'pending',
           payoutMethod,
-          createdAt: new Date().toISOString(),
+          accountDetails: JSON.stringify(accountDetails),
+          status: 'pending', // Will be processed by admin
+          createdAt: new Date(),
         },
-      },
-      { headers: corsHeaders }
-    );
+      });
+
+      // Mark earnings as withdrawn (placeholder for Razorpay integration)
+      const earningsToDeduct = userEarnings
+        .filter((earning: any) => earning.status === 'available')
+        .sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+      let remainingAmount = amount;
+      for (const earning of earningsToDeduct) {
+        if (remainingAmount <= 0) break;
+        
+        const deductAmount = Math.min(remainingAmount, earning.amount);
+        await prisma.referralEarning.update({
+          where: { id: earning.id },
+          data: {
+            amount: earning.amount - deductAmount,
+            status: deductAmount === earning.amount ? 'withdrawn' : 'available',
+          },
+        });
+        
+        remainingAmount -= deductAmount;
+      }
+
+      return NextResponse.json(
+        {
+          message: 'Payout request submitted successfully',
+          payoutRequest: {
+            id: payoutRequest.id,
+            amount,
+            status: payoutRequest.status,
+            payoutMethod,
+            createdAt: payoutRequest.createdAt,
+          },
+        },
+        { headers: corsHeaders }
+      );
+
+    } catch (error: any) {
+      console.error('Payout processing error:', error);
+      return NextResponse.json(
+        { error: 'Payout processing failed', details: error.message },
+        { status: 500, headers: corsHeaders }
+      );
+    }
 
   } catch (error) {
     console.error('Payout POST error:', error);
