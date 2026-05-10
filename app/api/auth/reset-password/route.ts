@@ -1,36 +1,243 @@
+import { createHash, randomBytes } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import { prisma } from '@/lib/prisma';
 import { corsHeaders } from '@/lib/api-utils';
 import { generateOTP, sendPasswordResetOTP } from '@/lib/email';
+import { rateLimit, rateLimitConfigs } from '@/lib/rate-limit';
+
+const PASSWORD_RESET_OTP_EXPIRY_MS = 10 * 60 * 1000;
+const PASSWORD_RESET_RESEND_COOLDOWN_MS = 60 * 1000;
+const PASSWORD_RESET_MAX_SENDS_PER_WINDOW = 3;
+const PASSWORD_RESET_MAX_VERIFY_ATTEMPTS = 5;
+const PASSWORD_RESET_TOKEN_EXPIRY_MS = 10 * 60 * 1000;
+
+const passwordResetIdentifierSchema = z.string().trim().min(1, 'Email or mobile number is required');
+const strongPasswordSchema = z.string()
+  .min(8, 'Password must be at least 8 characters')
+  .max(100, 'Password must be 100 characters or less')
+  .regex(/[a-z]/, 'Password must contain a lowercase letter')
+  .regex(/[A-Z]/, 'Password must contain an uppercase letter')
+  .regex(/\d/, 'Password must contain a number');
 
 const requestOTPSchema = z.object({
-  action: z.string(),
-  email: z.string().email().trim().toLowerCase(),
+  action: z.literal('send'),
+  identifier: passwordResetIdentifierSchema.optional(),
+  email: z.string().trim().optional(),
+}).refine((data) => Boolean(data.identifier || data.email), {
+  message: 'Email or mobile number is required',
+  path: ['identifier'],
 });
 
 const verifyOTPSchema = z.object({
-  action: z.string(),
-  email: z.string().email().trim().toLowerCase(),
-  otp: z.string().length(6),
+  action: z.literal('verify'),
+  identifier: passwordResetIdentifierSchema.optional(),
+  email: z.string().trim().optional(),
+  otp: z.string().trim().length(6, 'OTP must be 6 digits'),
+}).refine((data) => Boolean(data.identifier || data.email), {
+  message: 'Email or mobile number is required',
+  path: ['identifier'],
 });
 
 const resetPasswordSchema = z.object({
-  action: z.string(),
-  email: z.string().email().trim().toLowerCase(),
-  otp: z.string().length(6),
-  newPassword: z.string().min(6).max(100),
+  action: z.literal('reset'),
+  identifier: passwordResetIdentifierSchema.optional(),
+  email: z.string().trim().optional(),
+  otp: z.string().trim().length(6, 'OTP must be 6 digits').optional(),
+  resetToken: z.string().trim().min(32, 'Reset session expired. Please verify OTP again.').optional(),
+  newPassword: strongPasswordSchema,
+}).refine((data) => Boolean(data.identifier || data.email), {
+  message: 'Email or mobile number is required',
+  path: ['identifier'],
+}).refine((data) => Boolean(data.resetToken || data.otp), {
+  message: 'Reset session expired. Please request a new OTP.',
+  path: ['resetToken'],
 });
 
-// In-memory OTP storage (in production, use Redis)
-const otpStorage = new Map<string, { otp: string; expiresAt: number }>();
+type AccountType = 'user' | 'owner';
+
+interface PasswordResetSession {
+  accountType: AccountType;
+  email: string;
+  deliveryChannel: 'email';
+  deliveryTarget: string;
+  expiresAt: number;
+  lastSentAt: number;
+  resendAvailableAt: number;
+  sendCount: number;
+  sendWindowStartedAt: number;
+  verifyAttempts: number;
+  otpHash: string;
+  resetTokenExpiresAt?: number;
+  resetTokenHash?: string;
+}
+
+interface AccountLookupResult {
+  accountType: AccountType;
+  email: string;
+  phone?: string | null;
+}
+
+const passwordResetSessions = new Map<string, PasswordResetSession>();
+
+setInterval(() => {
+  const now = Date.now();
+
+  passwordResetSessions.forEach((session, email) => {
+    const activeUntil = Math.max(session.expiresAt, session.resetTokenExpiresAt ?? 0);
+    if (activeUntil <= now) {
+      passwordResetSessions.delete(email);
+    }
+  });
+}, 60 * 60 * 1000);
+
+function isValidEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
+
+function normalizePhone(value: string) {
+  return value.replace(/\D/g, '');
+}
+
+function isValidPhone(value: string) {
+  const normalizedPhone = normalizePhone(value);
+  return normalizedPhone.length >= 10 && normalizedPhone.length <= 15;
+}
+
+function normalizeIdentifier(value: string) {
+  const trimmedValue = value.trim();
+
+  if (isValidEmail(trimmedValue)) {
+    return {
+      kind: 'email' as const,
+      value: trimmedValue.toLowerCase(),
+    };
+  }
+
+  if (isValidPhone(trimmedValue)) {
+    return {
+      kind: 'phone' as const,
+      value: normalizePhone(trimmedValue),
+    };
+  }
+
+  return null;
+}
+
+function getIdentifierFromBody(body: { identifier?: string; email?: string }) {
+  return body.identifier?.trim() || body.email?.trim() || '';
+}
+
+function hashSecret(value: string) {
+  return createHash('sha256').update(value).digest('hex');
+}
+
+function createOtpHash(email: string, otp: string) {
+  return hashSecret(`${email.toLowerCase()}:${otp}`);
+}
+
+function createResetTokenHash(email: string, resetToken: string) {
+  return hashSecret(`${email.toLowerCase()}:${resetToken}`);
+}
+
+function maskEmail(email: string) {
+  const [localPart, domainPart] = email.split('@');
+  const visibleStart = localPart.slice(0, 2);
+  const maskedLocal = `${visibleStart}${'*'.repeat(Math.max(localPart.length - 2, 2))}`;
+  return `${maskedLocal}@${domainPart}`;
+}
+
+function getRetryAfterSeconds(retryAfterMs: number) {
+  return Math.max(1, Math.ceil(retryAfterMs / 1000));
+}
+
+async function findAccountByIdentifier(identifier: string): Promise<AccountLookupResult | null> {
+  const normalizedIdentifier = normalizeIdentifier(identifier);
+
+  if (!normalizedIdentifier) {
+    return null;
+  }
+
+  if (normalizedIdentifier.kind === 'email') {
+    const user = await prisma.user.findUnique({
+      where: { email: normalizedIdentifier.value },
+      select: { email: true, phone: true },
+    });
+
+    if (user) {
+      return {
+        accountType: 'user',
+        email: user.email,
+        phone: user.phone,
+      };
+    }
+
+    const owner = await prisma.stationOwner.findUnique({
+      where: { email: normalizedIdentifier.value },
+      select: { email: true, phone: true },
+    });
+
+    if (owner) {
+      return {
+        accountType: 'owner',
+        email: owner.email,
+        phone: owner.phone,
+      };
+    }
+
+    return null;
+  }
+
+  const normalizedPhone = normalizedIdentifier.value;
+  const lastTenDigits = normalizedPhone.slice(-10);
+  const phoneFilter = {
+    OR: [
+      { phone: normalizedPhone },
+      { phone: lastTenDigits },
+      { phone: { endsWith: lastTenDigits } },
+    ],
+  };
+
+  const user = await prisma.user.findFirst({
+    where: phoneFilter,
+    select: { email: true, phone: true },
+  });
+
+  if (user) {
+    return {
+      accountType: 'user',
+      email: user.email,
+      phone: user.phone,
+    };
+  }
+
+  const owner = await prisma.stationOwner.findFirst({
+    where: phoneFilter,
+    select: { email: true, phone: true },
+  });
+
+  if (owner) {
+    return {
+      accountType: 'owner',
+      email: owner.email,
+      phone: owner.phone,
+    };
+  }
+
+  return null;
+}
 
 export async function OPTIONS() {
   return NextResponse.json({}, { headers: corsHeaders });
 }
 
 export async function POST(request: NextRequest) {
+  const rateLimitResponse = rateLimit(request, rateLimitConfigs.auth, { headers: corsHeaders });
+  if (rateLimitResponse) {
+    return rateLimitResponse;
+  }
+
   try {
     const body = await request.json();
     const { action } = body;
@@ -39,48 +246,115 @@ export async function POST(request: NextRequest) {
       const validation = requestOTPSchema.safeParse(body);
       if (!validation.success) {
         return NextResponse.json(
-          { error: 'Invalid input', details: validation.error.errors },
+          { success: false, error: 'Invalid input', details: validation.error.flatten() },
           { status: 400, headers: corsHeaders }
         );
       }
 
-      const { email } = validation.data;
+      const identifier = getIdentifierFromBody(validation.data);
+      const normalizedIdentifier = normalizeIdentifier(identifier);
 
-      // Check if user exists in both User and StationOwner tables
-      const user = await prisma.user.findUnique({
-        where: { email },
-      });
-
-      const owner = await prisma.stationOwner.findUnique({
-        where: { email },
-      });
-
-      if (!user && !owner) {
+      if (!normalizedIdentifier) {
         return NextResponse.json(
-          { error: 'User not found' },
+          { success: false, error: 'Enter a valid email or mobile number' },
+          { status: 400, headers: corsHeaders }
+        );
+      }
+
+      const account = await findAccountByIdentifier(identifier);
+
+      if (!account) {
+        return NextResponse.json(
+          { success: false, error: 'Account not found' },
           { status: 404, headers: corsHeaders }
         );
       }
 
-      // Generate OTP
+      const accountKey = account.email.toLowerCase();
+      const existingSession = passwordResetSessions.get(accountKey);
+      const now = Date.now();
+
+      if (existingSession && existingSession.resendAvailableAt > now) {
+        const retryAfter = getRetryAfterSeconds(existingSession.resendAvailableAt - now);
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Please wait ${retryAfter} seconds before requesting another OTP.`,
+            retryAfter,
+          },
+          {
+            status: 429,
+            headers: {
+              ...corsHeaders,
+              'Retry-After': retryAfter.toString(),
+            },
+          }
+        );
+      }
+
+      const sendWindowStartedAt =
+        existingSession && existingSession.sendWindowStartedAt + PASSWORD_RESET_OTP_EXPIRY_MS > now
+          ? existingSession.sendWindowStartedAt
+          : now;
+      const sendCount =
+        existingSession && existingSession.sendWindowStartedAt + PASSWORD_RESET_OTP_EXPIRY_MS > now
+          ? existingSession.sendCount + 1
+          : 1;
+
+      if (sendCount > PASSWORD_RESET_MAX_SENDS_PER_WINDOW) {
+        const retryAfter = getRetryAfterSeconds((sendWindowStartedAt + PASSWORD_RESET_OTP_EXPIRY_MS) - now);
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Too many OTP requests. Please try again later.',
+            retryAfter,
+          },
+          {
+            status: 429,
+            headers: {
+              ...corsHeaders,
+              'Retry-After': retryAfter.toString(),
+            },
+          }
+        );
+      }
+
       const otp = generateOTP();
-      const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
+      const session: PasswordResetSession = {
+        accountType: account.accountType,
+        email: account.email.toLowerCase(),
+        deliveryChannel: 'email',
+        deliveryTarget: maskEmail(account.email),
+        expiresAt: now + PASSWORD_RESET_OTP_EXPIRY_MS,
+        lastSentAt: now,
+        resendAvailableAt: now + PASSWORD_RESET_RESEND_COOLDOWN_MS,
+        sendCount,
+        sendWindowStartedAt,
+        verifyAttempts: 0,
+        otpHash: createOtpHash(account.email, otp),
+      };
 
-      // Store OTP
-      otpStorage.set(email, { otp, expiresAt });
+      passwordResetSessions.set(accountKey, session);
 
-      // Send OTP email
-      const emailSent = await sendPasswordResetOTP(email, otp);
+      const emailSent = await sendPasswordResetOTP(account.email, otp);
 
       if (!emailSent) {
+        passwordResetSessions.delete(accountKey);
         return NextResponse.json(
-          { error: 'Failed to send reset email' },
+          { success: false, error: 'Failed to send reset OTP' },
           { status: 500, headers: corsHeaders }
         );
       }
 
       return NextResponse.json(
-        { message: 'OTP sent successfully' },
+        {
+          success: true,
+          message: 'OTP sent successfully',
+          deliveryChannel: session.deliveryChannel,
+          deliveryTarget: session.deliveryTarget,
+          expiresIn: Math.floor(PASSWORD_RESET_OTP_EXPIRY_MS / 1000),
+          resendAfter: Math.floor(PASSWORD_RESET_RESEND_COOLDOWN_MS / 1000),
+        },
         { status: 200, headers: corsHeaders }
       );
     }
@@ -89,39 +363,105 @@ export async function POST(request: NextRequest) {
       const validation = verifyOTPSchema.safeParse(body);
       if (!validation.success) {
         return NextResponse.json(
-          { error: 'Invalid input', details: validation.error.errors },
+          { success: false, error: 'Invalid input', details: validation.error.flatten() },
           { status: 400, headers: corsHeaders }
         );
       }
 
-      const { email, otp } = validation.data;
+      const identifier = getIdentifierFromBody(validation.data);
+      const normalizedIdentifier = normalizeIdentifier(identifier);
 
-      // Check OTP
-      const storedOTP = otpStorage.get(email);
-      if (!storedOTP) {
+      if (!normalizedIdentifier) {
         return NextResponse.json(
-          { error: 'Invalid or expired OTP' },
+          { success: false, error: 'Enter a valid email or mobile number' },
+          { status: 400, headers: corsHeaders }
+        );
+      }
+
+      const account = await findAccountByIdentifier(identifier);
+
+      if (!account) {
+        return NextResponse.json(
+          { success: false, error: 'Account not found' },
+          { status: 404, headers: corsHeaders }
+        );
+      }
+
+      const accountKey = account.email.toLowerCase();
+      const session = passwordResetSessions.get(accountKey);
+
+      if (!session) {
+        return NextResponse.json(
+          { success: false, error: 'Invalid or expired OTP' },
           { status: 401, headers: corsHeaders }
         );
       }
 
-      if (storedOTP.otp !== otp) {
+      const now = Date.now();
+
+      if (session.expiresAt <= now) {
+        passwordResetSessions.delete(accountKey);
         return NextResponse.json(
-          { error: 'Invalid OTP' },
+          { success: false, error: 'OTP expired' },
           { status: 401, headers: corsHeaders }
         );
       }
 
-      if (Date.now() > storedOTP.expiresAt) {
-        otpStorage.delete(email);
+      if (session.verifyAttempts >= PASSWORD_RESET_MAX_VERIFY_ATTEMPTS) {
+        passwordResetSessions.delete(accountKey);
         return NextResponse.json(
-          { error: 'OTP expired' },
+          { success: false, error: 'Too many invalid OTP attempts. Please request a new OTP.' },
+          { status: 429, headers: corsHeaders }
+        );
+      }
+
+      const isOtpValid = session.otpHash === createOtpHash(account.email, validation.data.otp);
+
+      if (!isOtpValid) {
+        const nextVerifyAttempts = session.verifyAttempts + 1;
+
+        if (nextVerifyAttempts >= PASSWORD_RESET_MAX_VERIFY_ATTEMPTS) {
+          passwordResetSessions.delete(accountKey);
+          return NextResponse.json(
+            { success: false, error: 'Too many invalid OTP attempts. Please request a new OTP.' },
+            { status: 429, headers: corsHeaders }
+          );
+        }
+
+        passwordResetSessions.set(accountKey, {
+          ...session,
+          verifyAttempts: nextVerifyAttempts,
+        });
+
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Invalid OTP',
+            remainingAttempts: PASSWORD_RESET_MAX_VERIFY_ATTEMPTS - nextVerifyAttempts,
+          },
           { status: 401, headers: corsHeaders }
         );
       }
+
+      const resetToken = randomBytes(32).toString('hex');
+
+      passwordResetSessions.set(accountKey, {
+        ...session,
+        expiresAt: now + PASSWORD_RESET_TOKEN_EXPIRY_MS,
+        verifyAttempts: 0,
+        otpHash: '',
+        resetTokenHash: createResetTokenHash(account.email, resetToken),
+        resetTokenExpiresAt: now + PASSWORD_RESET_TOKEN_EXPIRY_MS,
+      });
 
       return NextResponse.json(
-        { message: 'OTP verified successfully' },
+        {
+          success: true,
+          message: 'OTP verified successfully',
+          resetToken,
+          resetTokenExpiresIn: Math.floor(PASSWORD_RESET_TOKEN_EXPIRY_MS / 1000),
+          deliveryTarget: session.deliveryTarget,
+        },
         { status: 200, headers: corsHeaders }
       );
     }
@@ -130,79 +470,109 @@ export async function POST(request: NextRequest) {
       const validation = resetPasswordSchema.safeParse(body);
       if (!validation.success) {
         return NextResponse.json(
-          { error: 'Invalid input', details: validation.error.errors },
+          { success: false, error: 'Invalid input', details: validation.error.flatten() },
           { status: 400, headers: corsHeaders }
         );
       }
 
-      const { email, otp, newPassword } = validation.data;
+      const identifier = getIdentifierFromBody(validation.data);
+      const normalizedIdentifier = normalizeIdentifier(identifier);
 
-      // Check OTP
-      const storedOTP = otpStorage.get(email);
-      if (!storedOTP) {
+      if (!normalizedIdentifier) {
         return NextResponse.json(
-          { error: 'Invalid or expired OTP' },
+          { success: false, error: 'Enter a valid email or mobile number' },
+          { status: 400, headers: corsHeaders }
+        );
+      }
+
+      const account = await findAccountByIdentifier(identifier);
+
+      if (!account) {
+        return NextResponse.json(
+          { success: false, error: 'Account not found' },
+          { status: 404, headers: corsHeaders }
+        );
+      }
+
+      const accountKey = account.email.toLowerCase();
+      const session = passwordResetSessions.get(accountKey);
+
+      if (!session) {
+        return NextResponse.json(
+          { success: false, error: 'Reset session expired. Please request a new OTP.' },
           { status: 401, headers: corsHeaders }
         );
       }
 
-      if (storedOTP.otp !== otp) {
-        return NextResponse.json(
-          { error: 'Invalid OTP' },
-          { status: 401, headers: corsHeaders }
-        );
+      const now = Date.now();
+
+      if (validation.data.resetToken) {
+        if (!session.resetTokenHash || !session.resetTokenExpiresAt || session.resetTokenExpiresAt <= now) {
+          passwordResetSessions.delete(accountKey);
+          return NextResponse.json(
+            { success: false, error: 'Reset session expired. Please verify OTP again.' },
+            { status: 401, headers: corsHeaders }
+          );
+        }
+
+        const expectedResetTokenHash = createResetTokenHash(account.email, validation.data.resetToken);
+        if (session.resetTokenHash !== expectedResetTokenHash) {
+          return NextResponse.json(
+            { success: false, error: 'Invalid reset session. Please verify OTP again.' },
+            { status: 401, headers: corsHeaders }
+          );
+        }
+      } else if (validation.data.otp) {
+        if (session.expiresAt <= now) {
+          passwordResetSessions.delete(accountKey);
+          return NextResponse.json(
+            { success: false, error: 'OTP expired' },
+            { status: 401, headers: corsHeaders }
+          );
+        }
+
+        const expectedOtpHash = createOtpHash(account.email, validation.data.otp);
+        if (!session.otpHash || session.otpHash !== expectedOtpHash) {
+          return NextResponse.json(
+            { success: false, error: 'Invalid OTP' },
+            { status: 401, headers: corsHeaders }
+          );
+        }
       }
 
-      if (Date.now() > storedOTP.expiresAt) {
-        otpStorage.delete(email);
-        return NextResponse.json(
-          { error: 'OTP expired' },
-          { status: 401, headers: corsHeaders }
-        );
-      }
+      const passwordHash = await bcrypt.hash(validation.data.newPassword, 12);
 
-      // Check user type again
-      const user = await prisma.user.findUnique({
-        where: { email },
-      });
-
-      const owner = await prisma.stationOwner.findUnique({
-        where: { email },
-      });
-
-      // Hash new password
-      const passwordHash = await bcrypt.hash(newPassword, 10);
-
-      // Update password in appropriate table
-      if (user) {
+      if (account.accountType === 'user') {
         await prisma.user.update({
-          where: { email },
+          where: { email: account.email },
           data: { passwordHash },
         });
-      } else if (owner) {
+      } else {
         await prisma.stationOwner.update({
-          where: { email },
+          where: { email: account.email },
           data: { passwordHash },
         });
       }
 
-      // Remove OTP from storage
-      otpStorage.delete(email);
+      passwordResetSessions.delete(accountKey);
 
       return NextResponse.json(
-        { message: 'Password reset successfully' },
+        {
+          success: true,
+          message: 'Password reset successfully',
+        },
         { status: 200, headers: corsHeaders }
       );
     }
 
     return NextResponse.json(
-      { error: 'Invalid action' },
+      { success: false, error: 'Invalid action' },
       { status: 400, headers: corsHeaders }
     );
   } catch (error) {
     console.error('Password reset error:', error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { success: false, error: 'Internal server error' },
       { status: 500, headers: corsHeaders }
     );
   }
