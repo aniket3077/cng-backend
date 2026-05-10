@@ -14,40 +14,42 @@ const PASSWORD_RESET_MAX_VERIFY_ATTEMPTS = 5;
 const PASSWORD_RESET_TOKEN_EXPIRY_MS = 10 * 60 * 1000;
 
 const passwordResetIdentifierSchema = z.string().trim().min(1, 'Email or mobile number is required');
-const strongPasswordSchema = z.string()
-  .min(8, 'Password must be at least 8 characters')
-  .max(100, 'Password must be 100 characters or less')
-  .regex(/[a-z]/, 'Password must contain a lowercase letter')
-  .regex(/[A-Z]/, 'Password must contain an uppercase letter')
-  .regex(/\d/, 'Password must contain a number');
+const resetPasswordValueSchema = z.string()
+  .min(6, 'Password must be at least 6 characters')
+  .max(100, 'Password must be 100 characters or less');
+
+const passwordResetRequestShape = {
+  identifier: passwordResetIdentifierSchema.optional(),
+  email: z.string().trim().optional(),
+  mobile: z.string().trim().optional(),
+  phone: z.string().trim().optional(),
+  target: z.string().trim().optional(),
+};
 
 const requestOTPSchema = z.object({
   action: z.literal('send'),
-  identifier: passwordResetIdentifierSchema.optional(),
-  email: z.string().trim().optional(),
-}).refine((data) => Boolean(data.identifier || data.email), {
+  ...passwordResetRequestShape,
+}).refine((data) => Boolean(data.identifier || data.email || data.mobile || data.phone || data.target), {
   message: 'Email or mobile number is required',
   path: ['identifier'],
 });
 
 const verifyOTPSchema = z.object({
   action: z.literal('verify'),
-  identifier: passwordResetIdentifierSchema.optional(),
-  email: z.string().trim().optional(),
+  ...passwordResetRequestShape,
   otp: z.string().trim().length(6, 'OTP must be 6 digits'),
-}).refine((data) => Boolean(data.identifier || data.email), {
+}).refine((data) => Boolean(data.identifier || data.email || data.mobile || data.phone || data.target), {
   message: 'Email or mobile number is required',
   path: ['identifier'],
 });
 
 const resetPasswordSchema = z.object({
   action: z.literal('reset'),
-  identifier: passwordResetIdentifierSchema.optional(),
-  email: z.string().trim().optional(),
+  ...passwordResetRequestShape,
   otp: z.string().trim().length(6, 'OTP must be 6 digits').optional(),
   resetToken: z.string().trim().min(32, 'Reset session expired. Please verify OTP again.').optional(),
-  newPassword: strongPasswordSchema,
-}).refine((data) => Boolean(data.identifier || data.email), {
+  newPassword: resetPasswordValueSchema,
+}).refine((data) => Boolean(data.identifier || data.email || data.mobile || data.phone || data.target), {
   message: 'Email or mobile number is required',
   path: ['identifier'],
 }).refine((data) => Boolean(data.resetToken || data.otp), {
@@ -125,8 +127,34 @@ function normalizeIdentifier(value: string) {
   return null;
 }
 
-function getIdentifierFromBody(body: { identifier?: string; email?: string }) {
-  return body.identifier?.trim() || body.email?.trim() || '';
+function getIdentifierFromBody(body: {
+  identifier?: string;
+  email?: string;
+  mobile?: string;
+  phone?: string;
+  target?: string;
+}) {
+  return body.identifier?.trim()
+    || body.email?.trim()
+    || body.mobile?.trim()
+    || body.phone?.trim()
+    || body.target?.trim()
+    || '';
+}
+
+function getValidationErrorMessage(error: z.ZodError) {
+  return error.issues[0]?.message || 'Invalid input';
+}
+
+function logValidationFailure(action: string | undefined, body: Record<string, unknown>, error: z.ZodError) {
+  console.warn('Password reset validation failed', {
+    action: action || 'unknown',
+    keys: Object.keys(body || {}),
+    issues: error.issues.map((issue) => ({
+      path: issue.path.join('.') || 'form',
+      message: issue.message,
+    })),
+  });
 }
 
 function hashSecret(value: string) {
@@ -245,8 +273,13 @@ export async function POST(request: NextRequest) {
     if (action === 'send') {
       const validation = requestOTPSchema.safeParse(body);
       if (!validation.success) {
+        logValidationFailure(action, body, validation.error);
         return NextResponse.json(
-          { success: false, error: 'Invalid input', details: validation.error.flatten() },
+          {
+            success: false,
+            error: getValidationErrorMessage(validation.error),
+            details: validation.error.flatten(),
+          },
           { status: 400, headers: corsHeaders }
         );
       }
@@ -362,8 +395,13 @@ export async function POST(request: NextRequest) {
     if (action === 'verify') {
       const validation = verifyOTPSchema.safeParse(body);
       if (!validation.success) {
+        logValidationFailure(action, body, validation.error);
         return NextResponse.json(
-          { success: false, error: 'Invalid input', details: validation.error.flatten() },
+          {
+            success: false,
+            error: getValidationErrorMessage(validation.error),
+            details: validation.error.flatten(),
+          },
           { status: 400, headers: corsHeaders }
         );
       }
@@ -469,8 +507,13 @@ export async function POST(request: NextRequest) {
     if (action === 'reset') {
       const validation = resetPasswordSchema.safeParse(body);
       if (!validation.success) {
+        logValidationFailure(action, body, validation.error);
         return NextResponse.json(
-          { success: false, error: 'Invalid input', details: validation.error.flatten() },
+          {
+            success: false,
+            error: getValidationErrorMessage(validation.error),
+            details: validation.error.flatten(),
+          },
           { status: 400, headers: corsHeaders }
         );
       }
