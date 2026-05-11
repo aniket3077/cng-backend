@@ -21,7 +21,21 @@ export async function GET(request: NextRequest) {
 
     const user = await prisma.user.findUnique({
       where: { id: payload.userId },
-      include: { vehicles: true },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        phone: true,
+        role: true,
+        subscriptionType: true,
+        subscriptionEndsAt: true,
+        vehicles: {
+          select: {
+            id: true,
+            plate: true,
+          },
+        },
+      },
     });
 
     if (!user) {
@@ -29,6 +43,33 @@ export async function GET(request: NextRequest) {
         { error: 'User not found' },
         { status: 401, headers: corsHeaders }
       );
+    }
+
+    let supplementalProfile = {
+      totalEarnings: 0,
+      availableBalance: 0,
+      referralFraudStatus: 'clear',
+    };
+
+    try {
+      const extendedProfile = await prisma.user.findUnique({
+        where: { id: payload.userId },
+        select: {
+          totalEarnings: true,
+          availableBalance: true,
+          referralFraudStatus: true,
+        },
+      });
+
+      if (extendedProfile) {
+        supplementalProfile = {
+          totalEarnings: extendedProfile.totalEarnings,
+          availableBalance: extendedProfile.availableBalance,
+          referralFraudStatus: extendedProfile.referralFraudStatus,
+        };
+      }
+    } catch (extendedProfileError) {
+      console.warn('Customer profile extended fields unavailable, using safe defaults.', extendedProfileError);
     }
 
     return NextResponse.json(
@@ -42,9 +83,9 @@ export async function GET(request: NextRequest) {
           vehicles: user.vehicles,
           subscriptionType: user.subscriptionType,
           subscriptionEndsAt: user.subscriptionEndsAt,
-          totalEarnings: user.totalEarnings,
-          availableBalance: user.availableBalance,
-          referralFraudStatus: user.referralFraudStatus,
+          totalEarnings: supplementalProfile.totalEarnings,
+          availableBalance: supplementalProfile.availableBalance,
+          referralFraudStatus: supplementalProfile.referralFraudStatus,
         },
       },
       { status: 200, headers: corsHeaders }
@@ -96,7 +137,19 @@ export async function PUT(request: NextRequest) {
         ...(validation.data.name !== undefined ? { name: validation.data.name } : {}),
         ...(validation.data.phone !== undefined ? { phone: validation.data.phone } : {}),
       },
-      include: { vehicles: true },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        phone: true,
+        role: true,
+        vehicles: {
+          select: {
+            id: true,
+            plate: true,
+          },
+        },
+      },
     });
 
     return NextResponse.json(
