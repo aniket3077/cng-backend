@@ -781,30 +781,46 @@ export async function POST(request: NextRequest) {
       }
 
       phase = 'hash_new_password';
+      console.log('Hashing new password for:', account.email);
       const passwordHash = await bcrypt.hash(validation.data.newPassword, 12);
 
       phase = 'persist_new_password';
-      if (account.accountType === 'user') {
-        await prisma.user.update({
-          where: { email: account.email },
-          data: { passwordHash },
-        });
-      } else {
-        await prisma.stationOwner.update({
-          where: { email: account.email },
-          data: { passwordHash },
-        });
+      console.log('Updating password in database for:', account.email, 'Account type:', account.accountType);
+      try {
+        if (account.accountType === 'user') {
+          await prisma.user.update({
+            where: { email: account.email },
+            data: { passwordHash },
+          });
+          console.log('Updated user password successfully');
+        } else {
+          await prisma.stationOwner.update({
+            where: { email: account.email },
+            data: { passwordHash },
+          });
+          console.log('Updated station owner password successfully');
+        }
+
+        passwordResetSessions.delete(accountKey);
+        console.log('Deleted password reset session for:', account.email);
+
+        return NextResponse.json(
+          {
+            success: true,
+            message: 'Password reset successfully',
+          },
+          { status: 200, headers: corsHeaders }
+        );
+      } catch (dbError) {
+        console.error('Database error during password update:', dbError);
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Failed to update password. Please try again.',
+          },
+          { status: 500, headers: corsHeaders }
+        );
       }
-
-      passwordResetSessions.delete(accountKey);
-
-      return NextResponse.json(
-        {
-          success: true,
-          message: 'Password reset successfully',
-        },
-        { status: 200, headers: corsHeaders }
-      );
     }
 
     return NextResponse.json(
