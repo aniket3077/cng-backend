@@ -1,6 +1,7 @@
 import { Resend } from 'resend';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+const RESEND_API_KEY = process.env.RESEND_API_KEY;
+const resend = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null;
 const FROM_EMAIL = process.env.FROM_EMAIL || 'noreply@cngbharat.com';
 
 interface EmailOptions {
@@ -14,6 +15,11 @@ interface EmailOptions {
  */
 export async function sendEmail({ to, subject, html }: EmailOptions): Promise<boolean> {
   try {
+    if (!resend) {
+      console.warn('Email delivery skipped because RESEND_API_KEY is not configured.');
+      return false;
+    }
+
     console.log('Sending email to:', to);
     console.log('From:', FROM_EMAIL);
     console.log('Subject:', subject);

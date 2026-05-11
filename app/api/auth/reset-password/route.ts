@@ -2,7 +2,12 @@ import { createHash, randomBytes } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
-import { prisma } from '@/lib/prisma';
+import {
+  prisma,
+  isPrismaInitialized,
+  getPrismaInitError,
+  isPrismaUnavailableError,
+} from '@/lib/prisma';
 import { corsHeaders } from '@/lib/api-utils';
 import { generateOTP, sendPasswordResetOTP } from '@/lib/email';
 import { rateLimit, rateLimitConfigs } from '@/lib/rate-limit';
@@ -266,11 +271,23 @@ export async function POST(request: NextRequest) {
     return rateLimitResponse;
   }
 
+  if (!isPrismaInitialized()) {
+    const prismaInitError = getPrismaInitError();
+    console.error('Prisma not initialized while handling password reset:', prismaInitError);
+    return NextResponse.json(
+      { success: false, error: 'Password reset service temporarily unavailable' },
+      { status: 503, headers: corsHeaders }
+    );
+  }
+
+  let phase = 'parse_request';
+
   try {
     const body = await request.json();
     const { action } = body;
 
     if (action === 'send') {
+      phase = 'validate_send_request';
       const validation = requestOTPSchema.safeParse(body);
       if (!validation.success) {
         logValidationFailure(action, body, validation.error);
@@ -288,12 +305,14 @@ export async function POST(request: NextRequest) {
       const normalizedIdentifier = normalizeIdentifier(identifier);
 
       if (!normalizedIdentifier) {
+        phase = 'normalize_send_identifier';
         return NextResponse.json(
           { success: false, error: 'Enter a valid email or mobile number' },
           { status: 400, headers: corsHeaders }
         );
       }
 
+      phase = 'lookup_send_account';
       const account = await findAccountByIdentifier(identifier);
 
       if (!account) {
@@ -307,6 +326,7 @@ export async function POST(request: NextRequest) {
       const existingSession = passwordResetSessions.get(accountKey);
       const now = Date.now();
 
+      phase = 'send_rate_limit_checks';
       if (existingSession && existingSession.resendAvailableAt > now) {
         const retryAfter = getRetryAfterSeconds(existingSession.resendAvailableAt - now);
         return NextResponse.json(
@@ -369,13 +389,14 @@ export async function POST(request: NextRequest) {
 
       passwordResetSessions.set(accountKey, session);
 
+      phase = 'send_reset_email';
       const emailSent = await sendPasswordResetOTP(account.email, otp);
 
       if (!emailSent) {
         passwordResetSessions.delete(accountKey);
         return NextResponse.json(
-          { success: false, error: 'Failed to send reset OTP' },
-          { status: 500, headers: corsHeaders }
+          { success: false, error: 'Password reset email service temporarily unavailable' },
+          { status: 503, headers: corsHeaders }
         );
       }
 
@@ -393,6 +414,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === 'verify') {
+      phase = 'validate_verify_request';
       const validation = verifyOTPSchema.safeParse(body);
       if (!validation.success) {
         logValidationFailure(action, body, validation.error);
@@ -410,12 +432,14 @@ export async function POST(request: NextRequest) {
       const normalizedIdentifier = normalizeIdentifier(identifier);
 
       if (!normalizedIdentifier) {
+        phase = 'normalize_verify_identifier';
         return NextResponse.json(
           { success: false, error: 'Enter a valid email or mobile number' },
           { status: 400, headers: corsHeaders }
         );
       }
 
+      phase = 'lookup_verify_account';
       const account = await findAccountByIdentifier(identifier);
 
       if (!account) {
@@ -436,6 +460,7 @@ export async function POST(request: NextRequest) {
       }
 
       const now = Date.now();
+      phase = 'verify_otp_checks';
 
       if (session.expiresAt <= now) {
         passwordResetSessions.delete(accountKey);
@@ -482,6 +507,7 @@ export async function POST(request: NextRequest) {
       }
 
       const resetToken = randomBytes(32).toString('hex');
+      phase = 'issue_reset_token';
 
       passwordResetSessions.set(accountKey, {
         ...session,
@@ -505,6 +531,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === 'reset') {
+      phase = 'validate_reset_request';
       const validation = resetPasswordSchema.safeParse(body);
       if (!validation.success) {
         logValidationFailure(action, body, validation.error);
@@ -522,12 +549,14 @@ export async function POST(request: NextRequest) {
       const normalizedIdentifier = normalizeIdentifier(identifier);
 
       if (!normalizedIdentifier) {
+        phase = 'normalize_reset_identifier';
         return NextResponse.json(
           { success: false, error: 'Enter a valid email or mobile number' },
           { status: 400, headers: corsHeaders }
         );
       }
 
+      phase = 'lookup_reset_account';
       const account = await findAccountByIdentifier(identifier);
 
       if (!account) {
@@ -548,6 +577,7 @@ export async function POST(request: NextRequest) {
       }
 
       const now = Date.now();
+      phase = 'reset_token_checks';
 
       if (validation.data.resetToken) {
         if (!session.resetTokenHash || !session.resetTokenExpiresAt || session.resetTokenExpiresAt <= now) {
@@ -583,8 +613,10 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      phase = 'hash_new_password';
       const passwordHash = await bcrypt.hash(validation.data.newPassword, 12);
 
+      phase = 'persist_new_password';
       if (account.accountType === 'user') {
         await prisma.user.update({
           where: { email: account.email },
@@ -613,7 +645,13 @@ export async function POST(request: NextRequest) {
       { status: 400, headers: corsHeaders }
     );
   } catch (error) {
-    console.error('Password reset error:', error);
+    console.error(`Password reset error at phase "${phase}":`, error);
+    if (isPrismaUnavailableError(error)) {
+      return NextResponse.json(
+        { success: false, error: 'Password reset service temporarily unavailable' },
+        { status: 503, headers: corsHeaders }
+      );
+    }
     return NextResponse.json(
       { success: false, error: 'Internal server error' },
       { status: 500, headers: corsHeaders }
