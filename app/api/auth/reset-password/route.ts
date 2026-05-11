@@ -80,9 +80,10 @@ interface PasswordResetSession {
   sendCount: number;
   sendWindowStartedAt: number;
   verifyAttempts: number;
-  otpHash: string;
-  resetTokenExpiresAt?: number;
+  otpHash?: string;
+  resetToken?: string;
   resetTokenHash?: string;
+  resetTokenExpiresAt?: number;
 }
 
 interface PasswordResetOtpSessionTokenPayload extends JwtPayload, PasswordResetSession {
@@ -749,6 +750,32 @@ export async function POST(request: NextRequest) {
             { status: 401, headers: corsHeaders }
           );
         }
+
+        // Generate reset token for password reset step
+        const resetTokenExpiresAt = now + PASSWORD_RESET_TOKEN_EXPIRY_MS;
+        const resetToken = createPasswordResetFinalToken(tokenSession, resetTokenExpiresAt);
+        
+        // Update session with reset token
+        const updatedSession: PasswordResetSession = {
+          ...tokenSession,
+          resetToken,
+          resetTokenExpiresAt,
+          verifyAttempts: tokenSession.verifyAttempts + 1,
+        };
+        
+        const updatedSessionToken = createPasswordResetOtpSessionToken(updatedSession);
+        passwordResetSessions.set(accountKey, updatedSession);
+
+        return NextResponse.json(
+          {
+            success: true,
+            message: 'OTP verified successfully',
+            resetToken,
+            resetTokenExpiresIn: Math.floor(PASSWORD_RESET_TOKEN_EXPIRY_MS / 1000),
+            sessionToken: updatedSessionToken,
+          },
+          { status: 200, headers: corsHeaders }
+        );
       } else if (validation.data.otp) {
         console.log('Validating OTP for:', account.email);
         if (!session) {
