@@ -42,6 +42,9 @@ export async function GET(request: NextRequest) {
           vehicles: user.vehicles,
           subscriptionType: user.subscriptionType,
           subscriptionEndsAt: user.subscriptionEndsAt,
+          totalEarnings: user.totalEarnings,
+          availableBalance: user.availableBalance,
+          referralFraudStatus: user.referralFraudStatus,
         },
       },
       { status: 200, headers: corsHeaders }

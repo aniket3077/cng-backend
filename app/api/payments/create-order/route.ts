@@ -1,50 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Razorpay from 'razorpay';
-import jwt from 'jsonwebtoken';
-import { prisma } from '@/lib/prisma';
 import { corsHeaders } from '@/lib/api-utils';
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+import { requireAuth } from '@/lib/auth';
+import { getPlanConfig } from '@/lib/subscription';
 
 const razorpay = new Razorpay({
     key_id: process.env.RAZORPAY_KEY_ID || 'rzp_test_1234567890',
     key_secret: process.env.RAZORPAY_KEY_SECRET || 'your_razorpay_secret_key',
 });
 
-// Subscription plan pricing configuration
-const PLAN_CONFIG = {
-    free_trial: { price: 0, duration: 15, name: 'Free Trial' },
-    '1_month': { price: 15, duration: 30, name: '1 Month' },
-    '6_month': { price: 79, duration: 180, name: '6 Months' },
-    '1_year': { price: 150, duration: 365, name: '1 Year' },
-} as const;
-
 export async function OPTIONS() {
     return NextResponse.json({}, { headers: corsHeaders });
 }
 
-function verifyUserToken(request: NextRequest): string | null {
-    const authHeader = request.headers.get('authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return null;
-    }
-
-    const token = authHeader.substring(7);
-    try {
-        const decoded = jwt.verify(token, JWT_SECRET) as { userId: string };
-        if (!decoded.userId) return null;
-        return decoded.userId;
-    } catch (error) {
-        return null;
-    }
-}
-
 export async function POST(request: NextRequest) {
     try {
-        const userId = verifyUserToken(request);
-        if (!userId) {
+        const payload = await requireAuth(request);
+        if (payload.role !== 'customer') {
             return NextResponse.json(
-                { error: 'Unauthorized' },
-                { status: 401, headers: corsHeaders }
+                { error: 'Forbidden' },
+                { status: 403, headers: corsHeaders }
             );
         }
 
@@ -59,7 +34,7 @@ export async function POST(request: NextRequest) {
         }
 
         // Validate plan exists and price matches (security check)
-        const plan = PLAN_CONFIG[planId as keyof typeof PLAN_CONFIG];
+        const plan = getPlanConfig(planId);
         if (!plan) {
             return NextResponse.json(
                 { error: 'Invalid plan ID' },
@@ -90,8 +65,10 @@ export async function POST(request: NextRequest) {
             currency: 'INR',
             receipt: `rcpt_${Date.now().toString().slice(-8)}`,
             notes: {
-                userId,
-                planId,
+                userId: payload.userId,
+                planId: plan.id,
+                planName: plan.name,
+                commissionEligible: String(plan.commissionEligible),
             }
         };
 
@@ -106,10 +83,17 @@ export async function POST(request: NextRequest) {
 
         return NextResponse.json(
             {
+                success: true,
                 orderId: order.id,
                 amount: order.amount,
                 currency: order.currency,
-                keyId: process.env.RAZORPAY_KEY_ID
+                keyId: process.env.RAZORPAY_KEY_ID,
+                plan: {
+                    id: plan.id,
+                    name: plan.name,
+                    price: plan.price,
+                    cashbackHighlight: plan.cashbackHighlight,
+                },
             },
             { status: 200, headers: corsHeaders }
         );

@@ -23,18 +23,25 @@ model User {
   referredBy          String?
   totalEarnings       Float     @default(0)
   availableBalance    Float     @default(0)
+  lastKnownDeviceFingerprint String?
+  referralJoinedAt    DateTime?
+  referralFraudScore  Int       @default(0)
+  referralFraudStatus String    @default("clear")
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
   
   vehicles            Vehicle[]
   referralsGiven      Referral[]         @relation("Referrer")
-  referralReceived   Referral[]          @relation("Referred")
+  referralReceived   Referral?           @relation("Referred")
   earnings            ReferralEarning[]
   payoutRequests      PayoutRequest[]
+  savedPayoutMethods  SavedPayoutMethod[]
   
   @@index([email])
   @@index([referralCode])
   @@index([referredBy])
+  @@index([lastKnownDeviceFingerprint])
+  @@index([referralFraudStatus])
 }
 
 // Vehicle model
@@ -307,11 +314,23 @@ model PaymentHistory {
 model Referral {
   id            String    @id @default(cuid())
   referrerId    String
-  referredId    String?
+  referredId    String?   @unique
   referralCode  String
   status        String    @default("pending") // pending, completed, expired
   rewardAmount  Float     @default(50) // Reward amount in INR
+  commissionRate Float    @default(0.2)
+  commissionEarned Float?
+  subscriptionAmount Float?
+  subscriptionPlan String?
+  paymentStatus String    @default("awaiting_payment") // awaiting_payment, paid, failed, refunded
+  source        String?
+  deviceFingerprint String?
+  suspicious    Boolean   @default(false)
+  eligibleForCommission Boolean @default(true)
+  ineligibleReason String?
+  fraudFlags    String?
   completedAt   DateTime?
+  conversionAt  DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   
@@ -323,7 +342,8 @@ model Referral {
   @@index([referredId])
   @@index([referralCode])
   @@index([status])
-  @@unique([referralCode])
+  @@index([paymentStatus])
+  @@index([suspicious])
 }
 
 // ReferralEarning model
@@ -332,9 +352,13 @@ model ReferralEarning {
   userId        String
   referralId    String
   amount        Float
+  remainingAmount Float?
+  sourceAmount  Float?
+  commissionRate Float?
   type          String    @default("referral") // referral, bonus
   status        String    @default("pending") // pending, available, paid
   description   String?
+  metadata      String?
   earnedAt      DateTime  @default(now())
   availableAt   DateTime? // When this earning becomes available for payout
   paidAt        DateTime?
@@ -358,6 +382,14 @@ model PayoutRequest {
   status          String    @default("pending") // pending, processing, completed, failed
   payoutMethod    String    @default("bank_transfer") // bank_transfer, upi
   accountDetails  String?  // JSON string containing bank account details
+  feeAmount       Float     @default(0)
+  netAmount       Float?
+  referenceId     String?   @unique
+  otpVerifiedAt   DateTime?
+  instantPayout   Boolean   @default(false)
+  riskStatus      String    @default("clear") // clear, review, blocked
+  statusMessage   String?
+  providerPayload String?
   razorpayPayoutId String?  @unique
   razorpayFailureReason String?
   processedAt     DateTime?
@@ -372,4 +404,26 @@ model PayoutRequest {
   @@index([status])
   @@index([razorpayPayoutId])
   @@index([createdAt])
+}
+
+model SavedPayoutMethod {
+  id                String    @id @default(cuid())
+  userId            String
+  methodType        String    // upi, bank_transfer
+  label             String
+  isDefault         Boolean   @default(false)
+  upiId             String?
+  accountNumber     String?
+  ifsc              String?
+  accountHolderName String?
+  lastUsedAt        DateTime?
+  verifiedAt        DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([methodType])
+  @@index([isDefault])
 }

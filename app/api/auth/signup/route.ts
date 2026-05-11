@@ -4,16 +4,11 @@ import bcrypt from 'bcryptjs';
 import { prisma } from '@/lib/prisma';
 import { signJwt } from '@/lib/auth';
 import { corsHeaders } from '@/lib/api-utils';
-
-// Generate a random 8-character referral code
-function generateReferralCode(): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  let code = '';
-  for (let i = 0; i < 8; i++) {
-    code += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return code;
-}
+import {
+  assessReferralRisk,
+  buildDeviceFingerprint,
+  generateReferralCode,
+} from '@/lib/referral-commission';
 
 const signupSchema = z.object({
   name: z.string().min(2).max(100).trim(),
@@ -24,10 +19,28 @@ const signupSchema = z.object({
     .min(6, 'Password must be at least 6 characters')
     .max(100),
   referralCode: z.string().optional(),
+  deviceFingerprint: z.string().optional(),
+  referralSource: z.string().optional(),
 });
 
 export async function OPTIONS() {
   return NextResponse.json({}, { headers: corsHeaders });
+}
+
+async function createUniqueReferralCode() {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const candidate = generateReferralCode();
+    const existing = await prisma.user.findUnique({
+      where: { referralCode: candidate },
+      select: { id: true },
+    });
+
+    if (!existing) {
+      return candidate;
+    }
+  }
+
+  return `${generateReferralCode(6)}${Date.now().toString().slice(-2)}`;
 }
 
 export async function POST(request: NextRequest) {
@@ -42,7 +55,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { name, email, phone, vehicleNo, password, referralCode } = validation.data;
+    const {
+      name,
+      email,
+      phone,
+      vehicleNo,
+      password,
+      referralCode,
+      deviceFingerprint,
+      referralSource,
+    } = validation.data;
 
     // Check if user already exists
     const existingUser = await prisma.user.findUnique({
@@ -59,51 +81,143 @@ export async function POST(request: NextRequest) {
     // Hash password
     const passwordHash = await bcrypt.hash(password, 12);
 
-    // Handle referral code if provided
-    let referredBy = null;
+    const { fingerprint, isStrongFingerprint } = buildDeviceFingerprint(request, deviceFingerprint);
+
+    let referredBy: string | null = null;
+    let referralRecordInput:
+      | {
+          referrerId: string;
+          referralCode: string;
+          deviceFingerprint: string | null;
+          suspicious: boolean;
+          eligibleForCommission: boolean;
+          ineligibleReason: string | null;
+          fraudFlags: string;
+          riskScore: number;
+        }
+      | null = null;
+
     if (referralCode) {
       const referrer = await prisma.user.findUnique({
         where: { referralCode: referralCode.toUpperCase() },
+        select: {
+          id: true,
+          email: true,
+          phone: true,
+          lastKnownDeviceFingerprint: true,
+        },
       });
-      
+
+      if (!referrer) {
+        return NextResponse.json(
+          { error: 'Invalid referral code' },
+          { status: 400, headers: corsHeaders }
+        );
+      }
+
       if (referrer) {
-        referredBy = referrer.id;
-        // Create referral record
-        await prisma.referral.create({
-          data: {
-            referrerId: referrer.id,
-            referralCode: referralCode.toUpperCase(),
-            status: 'pending',
-            rewardAmount: 50,
-          },
+        const [existingUserOnFingerprint, existingReferralOnFingerprint] = await Promise.all([
+          fingerprint
+            ? prisma.user.findFirst({
+                where: {
+                  lastKnownDeviceFingerprint: fingerprint,
+                  id: { not: referrer.id },
+                },
+                select: { id: true },
+              })
+            : Promise.resolve(null),
+          fingerprint
+            ? prisma.referral.findFirst({
+                where: {
+                  deviceFingerprint: fingerprint,
+                },
+                select: { id: true },
+              })
+            : Promise.resolve(null),
+        ]);
+
+        const referralAssessment = assessReferralRisk({
+          fingerprint,
+          isStrongFingerprint,
+          referrerFingerprint: referrer.lastKnownDeviceFingerprint,
+          existingUserOnFingerprint: Boolean(existingUserOnFingerprint),
+          existingReferralOnFingerprint: Boolean(existingReferralOnFingerprint),
+          sameIdentityAsReferrer: Boolean(
+            referrer.email.toLowerCase() === email.toLowerCase() ||
+            (referrer.phone && phone && referrer.phone === phone)
+          ),
         });
+
+        referredBy = referrer.id;
+        referralRecordInput = {
+          referrerId: referrer.id,
+          referralCode: referralCode.toUpperCase(),
+          deviceFingerprint: fingerprint,
+          suspicious: referralAssessment.suspicious,
+          eligibleForCommission: referralAssessment.eligibleForCommission,
+          ineligibleReason: referralAssessment.ineligibleReason,
+          fraudFlags: JSON.stringify(referralAssessment.fraudFlags),
+          riskScore: referralAssessment.riskScore,
+        };
       }
     }
 
     // Generate referral code for new user
-    const newUserReferralCode = generateReferralCode();
+    const newUserReferralCode = await createUniqueReferralCode();
 
-    // Create user with vehicle in a transaction
-    console.log('Creating user with data:', { name, email, phone, vehicleNo, referralCode });
-    const user = await prisma.user.create({
-      data: {
-        name,
-        email,
-        phone,
-        passwordHash,
-        role: 'customer',
-        referralCode: newUserReferralCode,
-        referredBy,
-        vehicles: {
-          create: {
-            plate: vehicleNo,
-            regionCode: vehicleNo.substring(0, 2).toUpperCase(),
+    const user = await prisma.$transaction(async (tx) => {
+      const createdUser = await tx.user.create({
+        data: {
+          name,
+          email,
+          phone,
+          passwordHash,
+          role: 'customer',
+          referralCode: newUserReferralCode,
+          referredBy,
+          lastKnownDeviceFingerprint: fingerprint,
+          referralJoinedAt: referredBy ? new Date() : null,
+          referralFraudScore: referralRecordInput?.riskScore || 0,
+          referralFraudStatus: referralRecordInput
+            ? referralRecordInput.eligibleForCommission
+              ? referralRecordInput.suspicious
+                ? 'review'
+                : 'clear'
+              : 'blocked'
+            : 'clear',
+          vehicles: {
+            create: {
+              plate: vehicleNo,
+              regionCode: vehicleNo.substring(0, 2).toUpperCase(),
+            },
           },
         },
-      },
-      include: {
-        vehicles: true,
-      },
+        include: {
+          vehicles: true,
+        },
+      });
+
+      if (referralRecordInput) {
+        await tx.referral.create({
+          data: {
+            referrerId: referralRecordInput.referrerId,
+            referredId: createdUser.id,
+            referralCode: referralRecordInput.referralCode,
+            status: 'pending',
+            rewardAmount: 0,
+            commissionRate: 0.2,
+            paymentStatus: 'awaiting_payment',
+            source: referralSource || 'signup',
+            deviceFingerprint: referralRecordInput.deviceFingerprint,
+            suspicious: referralRecordInput.suspicious,
+            eligibleForCommission: referralRecordInput.eligibleForCommission,
+            ineligibleReason: referralRecordInput.ineligibleReason,
+            fraudFlags: referralRecordInput.fraudFlags,
+          },
+        });
+      }
+
+      return createdUser;
     });
 
     // Generate JWT token

@@ -1,39 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
-import jwt from 'jsonwebtoken';
 import { prisma } from '@/lib/prisma';
-import { PLAN_CONFIG } from '@/lib/subscription';
+import { getPlanConfig, getPublicSubscriptionPlans, normalizePlanType } from '@/lib/subscription';
 import { corsHeaders } from '@/lib/api-utils';
-
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+import { requireAuth } from '@/lib/auth';
 
 export async function OPTIONS() {
     return NextResponse.json({}, { headers: corsHeaders });
 }
 
-function verifyUserToken(request: NextRequest): string | null {
-    const authHeader = request.headers.get('authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return null;
-    }
-
-    const token = authHeader.substring(7);
-    try {
-        const decoded = jwt.verify(token, JWT_SECRET) as { userId: string; role: string };
-        // Allow distinct roles if necessary, but essentially check ID
-        if (!decoded.userId) return null;
-        return decoded.userId;
-    } catch (error) {
-        return null;
-    }
-}
-
 export async function POST(request: NextRequest) {
     try {
-        const userId = verifyUserToken(request);
-        if (!userId) {
+        const payload = await requireAuth(request);
+        if (payload.role !== 'customer') {
             return NextResponse.json(
-                { error: 'Unauthorized' },
-                { status: 401, headers: corsHeaders }
+                { error: 'Forbidden' },
+                { status: 403, headers: corsHeaders }
             );
         }
 
@@ -48,30 +29,31 @@ export async function POST(request: NextRequest) {
         }
 
         // Validate plan type
-        if (!PLAN_CONFIG[planType as keyof typeof PLAN_CONFIG]) {
+        const normalizedPlan = normalizePlanType(planType);
+        const plan = normalizedPlan ? getPlanConfig(normalizedPlan) : null;
+        if (!plan) {
             return NextResponse.json(
                 { error: 'Invalid plan type' },
                 { status: 400, headers: corsHeaders }
             );
         }
 
-        const plan = PLAN_CONFIG[planType as keyof typeof PLAN_CONFIG];
-        const durationDays = plan.duration;
-
         // Calculate expire date
         const startDate = new Date();
         const endDate = new Date();
-        endDate.setDate(startDate.getDate() + durationDays);
+        endDate.setDate(startDate.getDate() + plan.duration);
 
         // For free trial with auto-pay, set auto-renew to 1_month plan
-        const autoRenewPlan = planType === 'free_trial' && autoPay ? '1_month' : (autoPay ? planType : null);
+        const autoRenewPlan = plan.id === 'free_trial' && autoPay
+          ? 'monthly'
+          : (autoPay ? plan.id : null);
 
         // Update user subscription
         // NOTE: autoRenewPlan field requires migration - run: npx prisma migrate deploy
         const updatedUser = await prisma.user.update({
-            where: { id: userId },
+            where: { id: payload.userId },
             data: {
-                subscriptionType: planType,
+                subscriptionType: plan.id,
                 subscriptionEndsAt: endDate,
                 // autoRenewPlan: autoRenewPlan, // Uncomment after migration is applied
             },
@@ -84,10 +66,17 @@ export async function POST(request: NextRequest) {
             {
                 message: 'Subscription activated successfully',
                 subscription: {
-                    type: planType,
+                    type: plan.id,
+                    planName: plan.name,
                     expiresAt: endDate,
                     autoRenewPlan: autoRenewPlan,
-                }
+                },
+                referralCommissionPolicy: {
+                    commissionRate: '20%',
+                    trigger: 'First paid subscription only',
+                    eligible: plan.commissionEligible,
+                },
+                availablePlans: getPublicSubscriptionPlans(),
             },
             { status: 200, headers: corsHeaders }
         );

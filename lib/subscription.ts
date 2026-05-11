@@ -6,11 +6,80 @@ const GRACE_PERIOD_DAYS = 3;
 
 // Subscription plan pricing configuration
 export const PLAN_CONFIG = {
-    free_trial: { price: 0, duration: 15, name: 'Free Trial' },
-    '1_month': { price: 15, duration: 30, name: '1 Month' },
-    '6_month': { price: 79, duration: 180, name: '6 Months' },
-    '1_year': { price: 150, duration: 365, name: '1 Year' },
+    free_trial: {
+      id: 'free_trial',
+      price: 0,
+      duration: 15,
+      name: 'Free Trial',
+      billingLabel: '15-day access',
+      commissionEligible: false,
+      cashbackHighlight: 'Explore premium routing before upgrading',
+    },
+    monthly: {
+      id: 'monthly',
+      price: 149,
+      duration: 30,
+      name: 'Monthly Plan',
+      billingLabel: 'Billed monthly',
+      commissionEligible: true,
+      cashbackHighlight: 'Fast upgrade for first-time subscribers',
+    },
+    quarterly: {
+      id: 'quarterly',
+      price: 399,
+      duration: 90,
+      name: 'Quarterly Plan',
+      billingLabel: 'Billed every 3 months',
+      commissionEligible: true,
+      cashbackHighlight: 'Higher retention and better commission yield',
+    },
+    annual_premium: {
+      id: 'annual_premium',
+      price: 999,
+      duration: 365,
+      name: 'Annual Premium',
+      billingLabel: 'Billed yearly',
+      commissionEligible: true,
+      cashbackHighlight: 'Top conversion value with premium savings',
+    },
 } as const;
+
+export type SubscriptionPlanId = keyof typeof PLAN_CONFIG;
+
+const LEGACY_PLAN_ALIASES: Record<string, SubscriptionPlanId> = {
+  '1_month': 'monthly',
+  '6_month': 'quarterly',
+  '1_year': 'annual_premium',
+};
+
+export function normalizePlanType(planType: string): SubscriptionPlanId | null {
+  if (planType in PLAN_CONFIG) {
+    return planType as SubscriptionPlanId;
+  }
+
+  return LEGACY_PLAN_ALIASES[planType] || null;
+}
+
+export function getPlanConfig(planType: string) {
+  const normalizedPlan = normalizePlanType(planType);
+  return normalizedPlan ? PLAN_CONFIG[normalizedPlan] : null;
+}
+
+export function getPaidPlans() {
+  return Object.values(PLAN_CONFIG).filter((plan) => plan.commissionEligible);
+}
+
+export function getPublicSubscriptionPlans() {
+  return Object.values(PLAN_CONFIG).map((plan) => ({
+    id: plan.id,
+    name: plan.name,
+    price: plan.price,
+    duration: plan.duration,
+    billingLabel: plan.billingLabel,
+    cashbackHighlight: plan.cashbackHighlight,
+    commissionEligible: plan.commissionEligible,
+  }));
+}
 
 export interface SubscriptionCheckResult {
   isValid: boolean;
