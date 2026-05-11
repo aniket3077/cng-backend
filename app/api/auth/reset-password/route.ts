@@ -83,7 +83,6 @@ interface PasswordResetSession {
 interface AccountLookupResult {
   accountType: AccountType;
   email: string;
-  phone?: string | null;
 }
 
 const passwordResetSessions = new Map<string, PasswordResetSession>();
@@ -195,27 +194,25 @@ async function findAccountByIdentifier(identifier: string): Promise<AccountLooku
   if (normalizedIdentifier.kind === 'email') {
     const user = await prisma.user.findUnique({
       where: { email: normalizedIdentifier.value },
-      select: { email: true, phone: true },
+      select: { email: true },
     });
 
     if (user) {
       return {
         accountType: 'user',
         email: user.email,
-        phone: user.phone,
       };
     }
 
     const owner = await prisma.stationOwner.findUnique({
       where: { email: normalizedIdentifier.value },
-      select: { email: true, phone: true },
+      select: { email: true },
     });
 
     if (owner) {
       return {
         accountType: 'owner',
         email: owner.email,
-        phone: owner.phone,
       };
     }
 
@@ -234,27 +231,25 @@ async function findAccountByIdentifier(identifier: string): Promise<AccountLooku
 
   const user = await prisma.user.findFirst({
     where: phoneFilter,
-    select: { email: true, phone: true },
+    select: { email: true },
   });
 
   if (user) {
     return {
       accountType: 'user',
       email: user.email,
-      phone: user.phone,
     };
   }
 
   const owner = await prisma.stationOwner.findFirst({
     where: phoneFilter,
-    select: { email: true, phone: true },
+    select: { email: true },
   });
 
   if (owner) {
     return {
       accountType: 'owner',
       email: owner.email,
-      phone: owner.phone,
     };
   }
 
@@ -275,12 +270,17 @@ export async function POST(request: NextRequest) {
     const prismaInitError = getPrismaInitError();
     console.error('Prisma not initialized while handling password reset:', prismaInitError);
     return NextResponse.json(
-      { success: false, error: 'Password reset service temporarily unavailable' },
+      {
+        success: false,
+        error: 'Password reset service temporarily unavailable',
+        errorCode: 'PASSWORD_RESET_PRISMA_INIT',
+      },
       { status: 503, headers: corsHeaders }
     );
   }
 
   let phase = 'parse_request';
+  const makeErrorCode = () => `PASSWORD_RESET_${phase.toUpperCase()}`;
 
   try {
     const body = await request.json();
@@ -395,7 +395,11 @@ export async function POST(request: NextRequest) {
       if (!emailSent) {
         passwordResetSessions.delete(accountKey);
         return NextResponse.json(
-          { success: false, error: 'Password reset email service temporarily unavailable' },
+          {
+            success: false,
+            error: 'Password reset email service temporarily unavailable',
+            errorCode: makeErrorCode(),
+          },
           { status: 503, headers: corsHeaders }
         );
       }
@@ -648,12 +652,32 @@ export async function POST(request: NextRequest) {
     console.error(`Password reset error at phase "${phase}":`, error);
     if (isPrismaUnavailableError(error)) {
       return NextResponse.json(
-        { success: false, error: 'Password reset service temporarily unavailable' },
+        {
+          success: false,
+          error: 'Password reset service temporarily unavailable',
+          errorCode: makeErrorCode(),
+        },
         { status: 503, headers: corsHeaders }
       );
     }
+
+    if (phase === 'send_reset_email') {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Password reset email service temporarily unavailable',
+          errorCode: makeErrorCode(),
+        },
+        { status: 503, headers: corsHeaders }
+      );
+    }
+
     return NextResponse.json(
-      { success: false, error: 'Internal server error' },
+      {
+        success: false,
+        error: 'Internal server error',
+        errorCode: makeErrorCode(),
+      },
       { status: 500, headers: corsHeaders }
     );
   }
