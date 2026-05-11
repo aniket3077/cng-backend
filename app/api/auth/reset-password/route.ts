@@ -584,7 +584,9 @@ export async function POST(request: NextRequest) {
       phase = 'reset_token_checks';
 
       if (validation.data.resetToken) {
+        console.log('Validating resetToken for:', account.email);
         if (!session.resetTokenHash || !session.resetTokenExpiresAt || session.resetTokenExpiresAt <= now) {
+          console.log('Reset token expired or missing');
           passwordResetSessions.delete(accountKey);
           return NextResponse.json(
             { success: false, error: 'Reset session expired. Please verify OTP again.' },
@@ -594,13 +596,17 @@ export async function POST(request: NextRequest) {
 
         const expectedResetTokenHash = createResetTokenHash(account.email, validation.data.resetToken);
         if (session.resetTokenHash !== expectedResetTokenHash) {
+          console.log('Reset token hash mismatch');
           return NextResponse.json(
             { success: false, error: 'Invalid reset session. Please verify OTP again.' },
             { status: 401, headers: corsHeaders }
           );
         }
       } else if (validation.data.otp) {
+        console.log('Validating OTP for:', account.email);
+        console.log('Session expires at:', session.expiresAt, 'Current time:', now);
         if (session.expiresAt <= now) {
+          console.log('OTP expired');
           passwordResetSessions.delete(accountKey);
           return NextResponse.json(
             { success: false, error: 'OTP expired' },
@@ -609,7 +615,10 @@ export async function POST(request: NextRequest) {
         }
 
         const expectedOtpHash = createOtpHash(account.email, validation.data.otp);
+        console.log('Expected OTP hash exists:', !!session.otpHash);
+        console.log('OTP hash match:', session.otpHash === expectedOtpHash);
         if (!session.otpHash || session.otpHash !== expectedOtpHash) {
+          console.log('Invalid OTP');
           return NextResponse.json(
             { success: false, error: 'Invalid OTP' },
             { status: 401, headers: corsHeaders }
