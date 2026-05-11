@@ -322,6 +322,8 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      console.log('Creating OTP session for:', account.email);
+
       const accountKey = account.email.toLowerCase();
       const existingSession = passwordResetSessions.get(accountKey);
       const now = Date.now();
