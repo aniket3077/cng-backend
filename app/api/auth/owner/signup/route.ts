@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import { prisma } from '@/lib/prisma';
-import { signJwt } from '@/lib/auth';
+import { signJwt, signRefreshToken } from '@/lib/auth';
 import { corsHeaders } from '@/lib/api-utils';
 import { rateLimit, rateLimitConfigs } from '@/lib/rate-limit';
 
@@ -116,6 +116,11 @@ export async function POST(request: NextRequest) {
       { userId: owner.id, email: owner.email, role: 'owner' }
     );
 
+    // Generate refresh token
+    const refreshToken = signRefreshToken(
+      { userId: owner.id, email: owner.email, role: 'owner' }
+    );
+
     // Log activity
     await prisma.activityLog.create({
       data: {
@@ -144,6 +149,7 @@ export async function POST(request: NextRequest) {
       {
         message: 'Registration successful',
         token,
+        refreshToken,
         owner: {
           id: owner.id,
           name: owner.name,
@@ -168,3 +174,4 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+

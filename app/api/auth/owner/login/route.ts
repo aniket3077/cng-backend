@@ -16,7 +16,6 @@ export async function OPTIONS() {
 }
 
 export async function POST(request: NextRequest) {
-  // Apply rate limiting
   const rateLimitResponse = rateLimit(request, rateLimitConfigs.auth, { headers: corsHeaders });
   if (rateLimitResponse) {
     return rateLimitResponse;
@@ -35,7 +34,6 @@ export async function POST(request: NextRequest) {
 
     const { email, password } = validation.data;
 
-    // Find station owner
     const owner = await prisma.stationOwner.findUnique({
       where: { email: email.toLowerCase() },
       include: {
@@ -58,7 +56,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Verify password
     const isPasswordValid = await bcrypt.compare(password, owner.passwordHash);
     if (!isPasswordValid) {
       return NextResponse.json(
@@ -67,18 +64,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Generate JWT token
     const token = signJwt(
       { userId: owner.id, email: owner.email, role: 'owner' }
     );
 
-    // Update last login
     await prisma.stationOwner.update({
       where: { id: owner.id },
       data: { lastLoginAt: new Date() },
     });
 
-    // Log activity
     await prisma.activityLog.create({
       data: {
         ownerId: owner.id,
@@ -89,7 +83,7 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    return NextResponse.json(
+    const response = NextResponse.json(
       {
         message: 'Login successful',
         token,
@@ -106,6 +100,18 @@ export async function POST(request: NextRequest) {
       },
       { status: 200, headers: corsHeaders }
     );
+
+    response.cookies.set({
+      name: 'token',
+      value: token,
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 2 * 24 * 60 * 60, // 2 days
+      path: '/',
+    });
+
+    return response;
   } catch (error) {
     console.error('Login error:', error);
     if (isPrismaUnavailableError(error)) {

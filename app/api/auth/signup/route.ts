@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import { prisma } from '@/lib/prisma';
-import { signJwt } from '@/lib/auth';
+import { signJwt, signRefreshToken } from '@/lib/auth';
 import { corsHeaders } from '@/lib/api-utils';
 import {
   assessReferralRisk,
@@ -227,10 +227,18 @@ export async function POST(request: NextRequest) {
       role: user.role,
     });
 
+    // Generate refresh token
+    const refreshToken = signRefreshToken({
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+    });
+
     return NextResponse.json(
       {
         message: 'Account created successfully',
         token,
+        refreshToken,
         user: {
           id: user.id,
           email: user.email,
@@ -270,3 +278,4 @@ export async function POST(request: NextRequest) {
       );
   }
 }
+

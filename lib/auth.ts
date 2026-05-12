@@ -21,6 +21,17 @@ export function signJwt(payload: JWTPayload): string {
 }
 
 /**
+ * Sign a long-lived refresh token
+ * @param payload - User data to encode
+ * @returns Refresh token string (30-day expiry)
+ */
+export function signRefreshToken(payload: JWTPayload): string {
+  return jwt.sign(payload, JWT_SECRET, {
+    expiresIn: '30d',
+  });
+}
+
+/**
  * Verify and decode a JWT token
  * @param token - JWT token string
  * @returns Decoded payload or null if invalid
@@ -48,17 +59,22 @@ export async function verifyJwt(token: string): Promise<JWTPayload | null> {
 export function extractToken(request: NextRequest): string | null {
   const authHeader = request.headers.get('authorization');
 
-  if (!authHeader) {
-    return null;
+  if (authHeader) {
+    // Support "Bearer <token>" format
+    if (authHeader.startsWith('Bearer ')) {
+      return authHeader.substring(7);
+    }
+    // Support plain token
+    return authHeader;
   }
 
-  // Support "Bearer <token>" format
-  if (authHeader.startsWith('Bearer ')) {
-    return authHeader.substring(7);
+  // Fallback to HttpOnly cookie for web clients
+  const cookieToken = request.cookies.get('token')?.value;
+  if (cookieToken) {
+    return cookieToken;
   }
 
-  // Support plain token
-  return authHeader;
+  return null;
 }
 
 /**

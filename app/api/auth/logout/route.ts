@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { corsHeaders } from '@/lib/api-utils';
 import { extractToken, verifyJwt } from '@/lib/auth';
-import { blacklistToken } from '@/lib/token-blacklist';
+import { blacklistToken } from '@/lib/redis-token-blacklist';
 
 export async function OPTIONS() {
   return NextResponse.json({}, { headers: corsHeaders });

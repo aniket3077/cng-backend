@@ -75,7 +75,7 @@ export async function POST(request: NextRequest) {
         );
       }
 
-    const token = signJwt({
+      const token = signJwt({
         userId: user.id,
         email: user.email,
         role: user.role,
@@ -83,7 +83,7 @@ export async function POST(request: NextRequest) {
 
       securityLogger.logAuthenticationAttempt(req, email, true);
 
-      return NextResponse.json(
+      const response = NextResponse.json(
         {
           message: 'Login successful',
           token,
@@ -97,6 +97,19 @@ export async function POST(request: NextRequest) {
         },
         { status: 200, headers: corsHeaders }
       );
+
+      // Set HttpOnly cookie for web clients
+      response.cookies.set({
+        name: 'token',
+        value: token,
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 2 * 24 * 60 * 60, // 2 days
+        path: '/',
+      });
+
+      return response;
     } catch (error) {
       console.error('Login error:', error);
       if (isPrismaUnavailableError(error)) {
