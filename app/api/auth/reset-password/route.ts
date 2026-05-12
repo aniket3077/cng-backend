@@ -807,6 +807,14 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      // Safety guard: if we reach here without a verified token, reject
+      if (!verifiedResetToken && !validation.data.otp) {
+        return NextResponse.json(
+          { success: false, error: 'Reset session expired. Please request a new OTP.' },
+          { status: 401, headers: corsHeaders }
+        );
+      }
+
       phase = 'hash_new_password';
       console.log('Hashing new password for:', account.email);
       const passwordHash = await bcrypt.hash(validation.data.newPassword, 12);
@@ -839,11 +847,13 @@ export async function POST(request: NextRequest) {
           { status: 200, headers: corsHeaders }
         );
       } catch (dbError) {
-        console.error('Database error during password update:', dbError);
+        const dbErrorMessage = dbError instanceof Error ? dbError.message : String(dbError);
+        console.error('Database error during password update:', dbErrorMessage, dbError);
         return NextResponse.json(
           {
             success: false,
             error: 'Failed to update password. Please try again.',
+            ...(process.env.NODE_ENV !== 'production' && { debug: dbErrorMessage }),
           },
           { status: 500, headers: corsHeaders }
         );
