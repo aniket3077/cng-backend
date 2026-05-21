@@ -26,6 +26,8 @@ export interface RateLimitConfig {
 
 export interface RateLimitOptions {
   headers?: Record<string, string>;
+  identifier?: string;
+  errorMessage?: string;
 }
 
 /**
@@ -39,11 +41,9 @@ export function rateLimit(
   config: RateLimitConfig,
   options: RateLimitOptions = {}
 ): NextResponse | null {
-  // Get client identifier (IP address + user agent for better uniqueness)
   const forwarded = request.headers.get('x-forwarded-for') || request.headers.get('x-vercel-forwarded-for');
   const ip = forwarded ? forwarded.split(',')[0].trim() : request.headers.get('x-real-ip') || 'unknown';
-  const userAgent = request.headers.get('user-agent') || 'unknown';
-  const identifier = `${ip}-${userAgent}`;
+  const identifier = options.identifier || ip;
 
   const now = Date.now();
   const record = rateLimitStore[identifier];
@@ -63,7 +63,7 @@ export function rateLimit(
     return NextResponse.json(
       {
         error: 'Too many requests',
-        message: `Rate limit exceeded. Please try again in ${retryAfter} seconds.`,
+        message: options.errorMessage || `Rate limit exceeded. Please try again in ${retryAfter} seconds.`,
       },
       {
         status: 429,
@@ -90,7 +90,7 @@ export const rateLimitConfigs = {
   // For authentication endpoints (login, signup)
   auth: {
     windowMs: 5 * 60 * 1000, // 5 minutes
-    maxRequests: 30, // 30 attempts per 5 minutes
+    maxRequests: 10, // 10 attempts per 5 minutes
   },
   // For general API endpoints
   api: {

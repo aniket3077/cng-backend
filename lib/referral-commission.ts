@@ -15,8 +15,10 @@ export function generateReferralCode(length = 8): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let code = '';
 
+  // SECURITY FIX: use crypto.randomBytes instead of Math.random for referral codes
+  const randomBytes = crypto.randomBytes(length);
   for (let index = 0; index < length; index += 1) {
-    code += chars.charAt(Math.floor(Math.random() * chars.length));
+    code += chars.charAt(randomBytes[index] % chars.length);
   }
 
   return code;
@@ -61,16 +63,8 @@ export function buildDeviceFingerprint(
     };
   }
 
-  const userAgent = request.headers.get('user-agent') || 'unknown-agent';
-  const forwardedFor = request.headers.get('x-forwarded-for') || 'unknown-ip';
-  const acceptLanguage = request.headers.get('accept-language') || 'unknown-lang';
-  const weakFingerprint = crypto
-    .createHash('sha256')
-    .update(`${userAgent}|${forwardedFor}|${acceptLanguage}`)
-    .digest('hex');
-
   return {
-    fingerprint: weakFingerprint,
+    fingerprint: null,
     isStrongFingerprint: false,
   };
 }
@@ -82,6 +76,8 @@ interface ReferralAssessmentInput {
   existingUserOnFingerprint?: boolean;
   existingReferralOnFingerprint?: boolean;
   sameIdentityAsReferrer?: boolean;
+  recentReferralCount?: number;
+  recentDeviceReferralCount?: number;
 }
 
 export function assessReferralRisk({
@@ -91,6 +87,8 @@ export function assessReferralRisk({
   existingUserOnFingerprint,
   existingReferralOnFingerprint,
   sameIdentityAsReferrer,
+  recentReferralCount,
+  recentDeviceReferralCount,
 }: ReferralAssessmentInput) {
   const flags: string[] = [];
   let riskScore = 0;
@@ -123,6 +121,19 @@ export function assessReferralRisk({
     flags.push('weak_device_match');
     riskScore += 35;
     suspicious = true;
+  }
+
+  if ((recentReferralCount || 0) >= 4) {
+    flags.push('referral_velocity_limit');
+    riskScore += 45;
+    suspicious = true;
+  }
+
+  if (isStrongFingerprint && (recentDeviceReferralCount || 0) >= 2) {
+    flags.push('device_velocity_limit');
+    riskScore += 60;
+    eligibleForCommission = false;
+    ineligibleReason = ineligibleReason || 'referral_velocity';
   }
 
   if (riskScore >= 40) {

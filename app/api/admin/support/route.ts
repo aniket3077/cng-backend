@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
 import { requireAdmin } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
 import { corsHeaders, successResponse, errorResponse, parsePagination } from '@/lib/api-utils';
-
-const prisma = new PrismaClient();
 
 export async function OPTIONS() {
   return NextResponse.json({}, { headers: corsHeaders });
@@ -12,10 +10,8 @@ export async function OPTIONS() {
 // GET - List all support tickets (admin view)
 export async function GET(request: NextRequest) {
   try {
-    const authResult = await requireAdmin(request);
-    if (authResult instanceof NextResponse) {
-      return authResult;
-    }
+    // requireAdmin throws on auth failure — no need for instanceof guard
+    await requireAdmin(request);
 
     const { searchParams } = new URL(request.url);
     const { page, limit, skip } = parsePagination(searchParams);
@@ -90,6 +86,9 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
+    if (error instanceof Error && (error.message.includes('token') || error.message.includes('Admin access'))) {
+      return errorResponse('Unauthorized', 401);
+    }
     console.error('Get tickets error:', error);
     return errorResponse('Internal server error', 500);
   }
@@ -98,11 +97,7 @@ export async function GET(request: NextRequest) {
 // PUT - Update ticket (status, assignment, resolution)
 export async function PUT(request: NextRequest) {
   try {
-    const authResult = await requireAdmin(request);
-    if (authResult instanceof NextResponse) {
-      return authResult;
-    }
-    const admin = authResult;
+    const admin = await requireAdmin(request);
 
     const { searchParams } = new URL(request.url);
     const ticketId = searchParams.get('id');
@@ -193,6 +188,9 @@ export async function PUT(request: NextRequest) {
       ticket: updatedTicket,
     });
   } catch (error) {
+    if (error instanceof Error && (error.message.includes('token') || error.message.includes('Admin access'))) {
+      return errorResponse('Unauthorized', 401);
+    }
     console.error('Update ticket error:', error);
     return errorResponse('Internal server error', 500);
   }
@@ -201,11 +199,7 @@ export async function PUT(request: NextRequest) {
 // POST - Add reply to ticket (admin)
 export async function POST(request: NextRequest) {
   try {
-    const authResult = await requireAdmin(request);
-    if (authResult instanceof NextResponse) {
-      return authResult;
-    }
-    const admin = authResult;
+    const admin = await requireAdmin(request);
 
     const body = await request.json();
     const { ticketId, message, isInternal } = body;
@@ -264,6 +258,9 @@ export async function POST(request: NextRequest) {
       { ...corsHeaders, 'Content-Type': 'application/json' }
     );
   } catch (error) {
+    if (error instanceof Error && (error.message.includes('token') || error.message.includes('Admin access'))) {
+      return errorResponse('Unauthorized', 401);
+    }
     console.error('Add reply error:', error);
     return errorResponse('Internal server error', 500);
   }

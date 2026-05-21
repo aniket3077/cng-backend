@@ -1,49 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server';
-import jwt from 'jsonwebtoken';
 import { PrismaClient } from '@prisma/client';
 import { corsHeaders } from '@/lib/api-utils';
+import { requireAuth } from '@/lib/auth';
 
 const prisma = new PrismaClient();
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 
 export async function OPTIONS() {
   return NextResponse.json({}, { headers: corsHeaders });
 }
 
-function verifyToken(request: NextRequest): string | null {
-  const authHeader = request.headers.get('authorization');
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return null;
-  }
-
-  const token = authHeader.substring(7);
-  try {
-    // Support both old format (ownerId/type) and new format (userId/role)
-    const decoded = jwt.verify(token, JWT_SECRET) as { ownerId?: string; userId?: string; type?: string; role?: string };
-    
-    // Check for owner role/type
-    const isOwner = decoded.type === 'owner' || decoded.role === 'owner';
-    if (!isOwner) {
-      return null;
-    }
-    
-    // Return the owner ID from either format
-    return decoded.ownerId || decoded.userId || null;
-  } catch (error) {
-    return null;
-  }
-}
-
-// GET - Get owner profile
 export async function GET(request: NextRequest) {
   try {
-    const ownerId = verifyToken(request);
-    if (!ownerId) {
+    // SECURITY FIX: verify the owner session via the shared auth helper.
+    const payload = await requireAuth(request);
+    if (payload.role !== 'owner') {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401, headers: corsHeaders }
       );
     }
+
+    const ownerId = payload.userId;
 
     const owner = await prisma.stationOwner.findUnique({
       where: { id: ownerId },
@@ -80,7 +57,6 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Remove passwordHash from response
     const { passwordHash, ...ownerData } = owner;
 
     return NextResponse.json(
@@ -96,17 +72,18 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST - Update owner profile
 export async function POST(request: NextRequest) {
   try {
-    const ownerId = verifyToken(request);
-    if (!ownerId) {
+    // SECURITY FIX: verify the owner session via the shared auth helper.
+    const payload = await requireAuth(request);
+    if (payload.role !== 'owner') {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401, headers: corsHeaders }
       );
     }
 
+    const ownerId = payload.userId;
     const body = await request.json();
     const {
       name,
@@ -122,7 +99,6 @@ export async function POST(request: NextRequest) {
       lng,
     } = body;
 
-    // Update owner profile
     const owner = await prisma.stationOwner.update({
       where: { id: ownerId },
       data: {
@@ -138,7 +114,6 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // If coordinates are provided, update or create the owner's station
     if (lat !== undefined && lng !== undefined && address && city && state) {
       const stations = await prisma.station.findMany({
         where: { ownerId },
@@ -147,7 +122,6 @@ export async function POST(request: NextRequest) {
       });
 
       if (stations.length > 0) {
-        // Update existing station
         await prisma.station.update({
           where: { id: stations[0].id },
           data: {
@@ -159,7 +133,6 @@ export async function POST(request: NextRequest) {
           },
         });
       } else {
-        // Create new station if none exists
         const stationName = companyName || `${name}'s Station`;
         await prisma.station.create({
           data: {
@@ -176,7 +149,6 @@ export async function POST(request: NextRequest) {
           },
         });
 
-        // Log station creation
         await prisma.activityLog.create({
           data: {
             ownerId,
@@ -187,7 +159,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Check if profile is complete
     const isComplete = !!(
       owner.name &&
       owner.phone &&
@@ -204,7 +175,6 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Log activity
     await prisma.activityLog.create({
       data: {
         ownerId,
@@ -231,7 +201,6 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// PUT - Update owner profile (alias for POST)
 export async function PUT(request: NextRequest) {
   return POST(request);
 }

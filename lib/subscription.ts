@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from './prisma';
-import { verifyJwt } from './auth';
+import { extractToken, verifyJwt } from './auth';
 
 const GRACE_PERIOD_DAYS = 3;
 
@@ -177,15 +177,14 @@ export async function checkSubscription(ownerId: string): Promise<SubscriptionCh
  */
 export async function requireActiveSubscription(request: NextRequest): Promise<NextResponse | null> {
   try {
-    const authHeader = request.headers.get('authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    const token = extractToken(request);
+    if (!token) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
       );
     }
 
-    const token = authHeader.split(' ')[1];
     const payload = await verifyJwt(token);
     
     if (!payload || payload.role !== 'owner') {

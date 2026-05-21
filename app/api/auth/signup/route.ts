@@ -9,14 +9,17 @@ import {
   buildDeviceFingerprint,
   generateReferralCode,
 } from '@/lib/referral-commission';
+import { rateLimit, rateLimitConfigs } from '@/lib/rate-limit';
+
+const indianVehicleRegex = /^[A-Z]{2}\d{1,2}[A-Z]{0,3}\d{4}$/;
 
 const signupSchema = z.object({
   name: z.string().min(2).max(100).trim(),
   email: z.string().email().trim().toLowerCase(),
-  phone: z.string().min(10).max(15, 'Invalid phone number'),
-  vehicleNo: z.string().min(4).max(20).trim().toUpperCase(),
+  phone: z.string().trim().regex(/^\d{10,15}$/, 'Invalid phone number'),
+  vehicleNo: z.string().trim().toUpperCase().regex(indianVehicleRegex, 'Invalid vehicle number'),
   password: z.string()
-    .min(6, 'Password must be at least 6 characters')
+    .min(8, 'Password must be at least 8 characters')
     .max(100),
   referralCode: z.string().optional(),
   deviceFingerprint: z.string().optional(),
@@ -45,6 +48,14 @@ async function createUniqueReferralCode() {
 
 export async function POST(request: NextRequest) {
   try {
+    const rateLimitResponse = rateLimit(request, rateLimitConfigs.auth, {
+      headers: corsHeaders,
+      errorMessage: 'Too many signup attempts. Please try again later.',
+    });
+    if (rateLimitResponse) {
+      return rateLimitResponse;
+    }
+
     const body = await request.json();
     const validation = signupSchema.safeParse(body);
 
@@ -110,13 +121,19 @@ export async function POST(request: NextRequest) {
 
       if (!referrer) {
         return NextResponse.json(
-          { error: 'Invalid referral code' },
+          { error: 'Referral code could not be linked to this account' },
           { status: 400, headers: corsHeaders }
         );
       }
 
       if (referrer) {
-        const [existingUserOnFingerprint, existingReferralOnFingerprint] = await Promise.all([
+        const velocityWindowStart = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        const [
+          existingUserOnFingerprint,
+          existingReferralOnFingerprint,
+          recentReferralCount,
+          recentDeviceReferralCount,
+        ] = await Promise.all([
           fingerprint
             ? prisma.user.findFirst({
                 where: {
@@ -134,6 +151,20 @@ export async function POST(request: NextRequest) {
                 select: { id: true },
               })
             : Promise.resolve(null),
+          prisma.referral.count({
+            where: {
+              referrerId: referrer.id,
+              createdAt: { gte: velocityWindowStart },
+            },
+          }),
+          fingerprint
+            ? prisma.referral.count({
+                where: {
+                  deviceFingerprint: fingerprint,
+                  createdAt: { gte: velocityWindowStart },
+                },
+              })
+            : Promise.resolve(0),
         ]);
 
         const referralAssessment = assessReferralRisk({
@@ -146,6 +177,8 @@ export async function POST(request: NextRequest) {
             referrer.email.toLowerCase() === email.toLowerCase() ||
             (referrer.phone && phone && referrer.phone === phone)
           ),
+          recentReferralCount,
+          recentDeviceReferralCount,
         });
 
         referredBy = referrer.id;
@@ -251,13 +284,6 @@ export async function POST(request: NextRequest) {
       { status: 201, headers: corsHeaders }
     );
   } catch (error) {
-    console.error('Signup error:', error);
-    console.error('Error details:', {
-      message: error instanceof Error ? error.message : 'Unknown error',
-      code: (error as any)?.code,
-      meta: (error as any)?.meta,
-    });
-      // Return more specific error messages for debugging
       let errorMessage = 'Internal server error';
       let statusCode = 500;
 
@@ -265,10 +291,6 @@ export async function POST(request: NextRequest) {
         if (error.message.includes('Unique constraint failed')) {
           errorMessage = 'Email already registered';
           statusCode = 409;
-        } else if (error.message.includes('prisma')) {
-          errorMessage = 'Database error: ' + error.message;
-        } else {
-          errorMessage = error.message;
         }
       }
 

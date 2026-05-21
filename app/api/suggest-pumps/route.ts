@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
-import { calculateHaversineDistance } from '@/lib/api-utils';
+import { calculateHaversineDistance, corsHeaders } from '@/lib/api-utils';
+import { requireAuth } from '@/lib/auth';
 
 // Validation schema
 const suggestPumpsSchema = z.object({
@@ -28,6 +29,15 @@ interface StationSuggestion {
  */
 export async function POST(request: NextRequest) {
   try {
+    // SECURITY FIX: require authentication for suggest-pumps endpoint
+    const payload = await requireAuth(request);
+    if (!payload) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401, headers: corsHeaders }
+      );
+    }
+
     const body = await request.json();
 
     // Validate input
@@ -78,8 +88,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Fetch candidate stations within bounding box
+    // SECURITY FIX: limit pagination to prevent resource exhaustion
     const stations = await prisma.station.findMany({
       where,
+      take: 100,
     });
 
     if (stations.length === 0) {
@@ -137,12 +149,12 @@ export async function POST(request: NextRequest) {
       radiusKm,
       center: { lat, lng },
       suggestions,
-    });
+    }, { headers: corsHeaders });
   } catch (error) {
     console.error('Error suggesting pumps:', error);
     return NextResponse.json(
       { error: 'Failed to suggest pumps' },
-      { status: 500 }
+      { status: 500, headers: corsHeaders }
     );
   }
 }

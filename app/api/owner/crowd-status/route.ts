@@ -1,24 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
+import { verifyJwt } from '@/lib/auth';
 import { corsHeaders } from '@/lib/api-utils';
 
 // Validation schema
 const updateCrowdStatusSchema = z.object({
-  stationId: z.string(),
+  stationId: z.string().min(1),
   crowdLevel: z.enum(['low', 'medium', 'high']),
   crowdCount: z.number().int().min(0).optional(),
   estimatedWaitTime: z.number().int().min(0).optional(),
 });
 
+export async function OPTIONS() {
+  return NextResponse.json({}, { headers: corsHeaders });
+}
+
 /**
  * PUT /api/owner/crowd-status
- * Update crowd information for a station
- * Only the owner of the station can update this
+ * Update crowd information for a station.
+ * Requires a valid owner JWT. Only the station's owner may update it.
  */
 export async function PUT(request: NextRequest) {
   try {
-    const authHeader = request.headers.get('Authorization');
+    // --- Authentication ---
+    const authHeader = request.headers.get('Authorization') || request.headers.get('authorization');
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return NextResponse.json(
         { error: 'Unauthorized' },
@@ -27,38 +33,41 @@ export async function PUT(request: NextRequest) {
     }
 
     const token = authHeader.slice(7);
-    // In production, verify the JWT token properly
-    // For now, we'll get the owner info from the request
+    const payload = await verifyJwt(token);
 
+    if (!payload || payload.role !== 'owner') {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401, headers: corsHeaders }
+      );
+    }
+
+    // --- Input validation ---
     const body = await request.json();
     const validation = updateCrowdStatusSchema.safeParse(body);
 
     if (!validation.success) {
       return NextResponse.json(
-        {
-          error: 'Validation failed',
-          details: validation.error.errors,
-        },
+        { error: 'Validation failed', details: validation.error.errors },
         { status: 400, headers: corsHeaders }
       );
     }
 
     const { stationId, crowdLevel, crowdCount, estimatedWaitTime } = validation.data;
 
-    // Verify station exists and owner has access
-    const station = await prisma.station.findUnique({
-      where: { id: stationId },
-      include: { owner: true },
+    // --- Authorization: station must belong to this owner ---
+    const station = await prisma.station.findFirst({
+      where: { id: stationId, ownerId: payload.userId },
     });
 
     if (!station) {
       return NextResponse.json(
-        { error: 'Station not found' },
+        { error: 'Station not found or access denied' },
         { status: 404, headers: corsHeaders }
       );
     }
 
-    // Update crowd status
+    // --- Update ---
     const updatedStation = await prisma.station.update({
       where: { id: stationId },
       data: {
@@ -78,11 +87,7 @@ export async function PUT(request: NextRequest) {
     });
 
     return NextResponse.json(
-      {
-        success: true,
-        message: 'Crowd status updated successfully',
-        station: updatedStation,
-      },
+      { success: true, message: 'Crowd status updated successfully', station: updatedStation },
       { headers: corsHeaders }
     );
   } catch (error) {
@@ -92,4 +97,9 @@ export async function PUT(request: NextRequest) {
       { status: 500, headers: corsHeaders }
     );
   }
+}
+
+// POST delegates to PUT for convenience
+export async function POST(request: NextRequest) {
+  return PUT(request);
 }

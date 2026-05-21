@@ -32,6 +32,15 @@ export async function POST(request: NextRequest) {
 
     // Get webhook secret from environment
     const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
+
+    // SECURITY FIX: block startup placeholders so the webhook cannot run with a fake secret.
+    if (webhookSecret === 'your_webhook_secret_here') {
+      console.error('RAZORPAY_WEBHOOK_SECRET is still set to the placeholder value');
+      return NextResponse.json(
+        { error: 'Webhook not properly configured' },
+        { status: 500 }
+      );
+    }
     
     if (!webhookSecret) {
       console.error('RAZORPAY_WEBHOOK_SECRET not configured');

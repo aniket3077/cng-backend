@@ -8,8 +8,11 @@ import { sanitizeEnvValue } from './env-values';
 interface EnvConfig {
   // Required
   JWT_SECRET: string;
+  JWT_REFRESH_SECRET: string;
   DATABASE_URL: string;
   ALLOWED_ORIGINS: string[];
+  RAZORPAY_KEY_ID: string;
+  RAZORPAY_KEY_SECRET: string;
 
   // Optional with defaults
   NODE_ENV: 'development' | 'production' | 'test';
@@ -22,7 +25,10 @@ interface EnvConfig {
 
 const requiredEnvVars = [
   'JWT_SECRET',
+  'JWT_REFRESH_SECRET',
   'DATABASE_URL',
+  'RAZORPAY_KEY_ID',
+  'RAZORPAY_KEY_SECRET',
 ] as const;
 
 const optionalEnvVars = {
@@ -47,12 +53,7 @@ function validateEnv(): EnvConfig {
 
   if (missing.length > 0) {
     const message = `Missing required environment variables:\n${missing.map(v => `  - ${v}`).join('\n')}\n\nPlease create a .env file with these variables or set them in your environment.`;
-    console.error('❌ Environment Validation Error:', message);
-    
-    // In production, throw to fail fast. In development, log warning but continue.
-    if (process.env.NODE_ENV === 'production') {
-      throw new Error(message);
-    }
+    throw new Error(message);
   }
 
   // Validate JWT_SECRET strength
@@ -71,8 +72,11 @@ function validateEnv(): EnvConfig {
 
   return {
     JWT_SECRET: jwtSecret,
-    DATABASE_URL: sanitizeEnvValue(process.env.DATABASE_URL) || 'postgresql://localhost/postgres',
+    JWT_REFRESH_SECRET: sanitizeEnvValue(process.env.JWT_REFRESH_SECRET),
+    DATABASE_URL: sanitizeEnvValue(process.env.DATABASE_URL),
     ALLOWED_ORIGINS: parseAllowedOrigins(process.env.ALLOWED_ORIGINS),
+    RAZORPAY_KEY_ID: sanitizeEnvValue(process.env.RAZORPAY_KEY_ID),
+    RAZORPAY_KEY_SECRET: sanitizeEnvValue(process.env.RAZORPAY_KEY_SECRET),
     NODE_ENV: (process.env.NODE_ENV as EnvConfig['NODE_ENV']) || 'development',
     PORT: parseInt(process.env.PORT || String(optionalEnvVars.PORT)),
     GOOGLE_MAPS_API_KEY: sanitizeEnvValue(process.env.GOOGLE_MAPS_API_KEY),
@@ -80,18 +84,20 @@ function validateEnv(): EnvConfig {
   };
 }
 
-// Validate on import with graceful error handling
 let envValidationError: Error | null = null;
-let tempEnv: EnvConfig;
+let parsedEnv: EnvConfig;
 
 try {
-  tempEnv = validateEnv();
+  parsedEnv = validateEnv();
 } catch (err) {
   envValidationError = err instanceof Error ? err : new Error(String(err));
-  tempEnv = {
-    JWT_SECRET: 'development-default-secret-min-32-characters-long',
-    DATABASE_URL: 'postgresql://localhost/postgres',
-    ALLOWED_ORIGINS: ['*'],
+  parsedEnv = {
+    JWT_SECRET: '',
+    JWT_REFRESH_SECRET: '',
+    DATABASE_URL: '',
+    ALLOWED_ORIGINS: [],
+    RAZORPAY_KEY_ID: '',
+    RAZORPAY_KEY_SECRET: '',
     NODE_ENV: 'development',
     PORT: 3000,
     GOOGLE_MAPS_API_KEY: '',
@@ -99,13 +105,16 @@ try {
   };
 }
 
-export const env = tempEnv;
-export const getEnvValidationError = () => envValidationError;
+export const env = parsedEnv;
+export const getEnvValidationError = (): Error | null => envValidationError;
 
 // Export individual values for convenience
 export const {
   JWT_SECRET,
+  JWT_REFRESH_SECRET,
   DATABASE_URL,
+  RAZORPAY_KEY_ID,
+  RAZORPAY_KEY_SECRET,
   NODE_ENV,
   PORT,
   ALLOWED_ORIGINS,

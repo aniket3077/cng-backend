@@ -1,40 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
-import jwt from 'jsonwebtoken';
-import { PrismaClient } from '@prisma/client';
 import { corsHeaders } from '@/lib/api-utils';
-
-const prisma = new PrismaClient();
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
-
-function verifySubscriberToken(request: NextRequest): string | null {
-  const authHeader = request.headers.get('authorization');
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return null;
-  }
-
-  const token = authHeader.substring(7);
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET) as { ownerId: string };
-    return decoded.ownerId;
-  } catch (error) {
-    return null;
-  }
-}
+import { requireAuth } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
 
 export async function OPTIONS() {
   return NextResponse.json({}, { headers: corsHeaders });
 }
 
-// GET - Get CNG availability for subscriber's stations
 export async function GET(request: NextRequest) {
   try {
-    const ownerId = verifySubscriberToken(request);
-    if (!ownerId) {
+    // SECURITY FIX: verify the owner session via the shared auth helper.
+    const payload = await requireAuth(request);
+    if (payload.role !== 'owner') {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401, headers: corsHeaders }
       );
     }
+
+    const ownerId = payload.userId;
 
     const stations = await prisma.station.findMany({
       where: { ownerId },
@@ -57,17 +41,18 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// PUT - Update CNG availability for a station
 export async function PUT(request: NextRequest) {
   try {
-    const ownerId = verifySubscriberToken(request);
-    if (!ownerId) {
+    // SECURITY FIX: verify the owner session via the shared auth helper.
+    const payload = await requireAuth(request);
+    if (payload.role !== 'owner') {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401, headers: corsHeaders }
       );
     }
 
+    const ownerId = payload.userId;
     const body = await request.json();
     const { stationId, cngAvailable } = body;
 
@@ -78,7 +63,6 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // Verify the station belongs to this owner
     const station = await prisma.station.findFirst({
       where: {
         id: stationId,
@@ -93,7 +77,6 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // Update CNG availability
     const cngAvailableBool =
       typeof cngAvailable === 'boolean'
         ? cngAvailable

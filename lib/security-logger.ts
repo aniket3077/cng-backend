@@ -57,12 +57,9 @@ class SecurityLogger {
       this.logs = this.logs.slice(-this.maxLogs);
     }
 
-    // Log to console for now (in production, use proper logging service)
-    const logLevel = success ? 'INFO' : 'WARN';
-    console.log(`[${logLevel}] SECURITY: ${action} | IP: ${logEntry.ip} | Success: ${success}`);
-    
-    if (!success) {
-      console.warn('Security Event Details:', logEntry);
+    if (process.env.NODE_ENV !== 'production') {
+      const logLevel = success ? 'INFO' : 'WARN';
+      console.log(`[${logLevel}] SECURITY: ${action} | IP: ${logEntry.ip} | Success: ${success}`);
     }
   }
 

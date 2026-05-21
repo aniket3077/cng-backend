@@ -3,17 +3,19 @@ import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { corsHeaders } from '@/lib/api-utils';
 import { requireAuth } from '@/lib/auth';
+import { createIdempotencyReference, verifySignedRequest } from '@/lib/request-security';
 import {
   MAX_WITHDRAWAL_AMOUNT,
   MIN_WITHDRAWAL_AMOUNT,
   calculatePayoutFee,
-  createPayoutReference,
   getEarningRemainingAmount,
   maskDestination,
   parseJson,
   roundCurrency,
   syncUserCommissionBalances,
 } from '@/lib/referral-commission';
+import { rateLimit, rateLimitConfigs } from '@/lib/rate-limit';
+import { verifyPayoutOtp } from '@/lib/payout-otp';
 
 const payoutRequestSchema = z.object({
   amount: z.number().min(MIN_WITHDRAWAL_AMOUNT).max(MAX_WITHDRAWAL_AMOUNT),
@@ -152,7 +154,7 @@ export async function GET(request: NextRequest) {
           minimumWithdrawal: MIN_WITHDRAWAL_AMOUNT,
           maximumWithdrawal: MAX_WITHDRAWAL_AMOUNT,
           instantPayoutFee: '1.5% capped at ₹25',
-          razorpayXIntegration: 'Placeholder hooks ready for contact, fund account, payout, and webhook sync',
+          razorpayXIntegration: 'Queued through secure payout orchestration with webhook reconciliation',
         },
         savedPayoutMethods: savedPayoutMethods.map((method) => ({
           id: method.id,
@@ -209,10 +211,9 @@ export async function GET(request: NextRequest) {
       },
       { headers: corsHeaders },
     );
-  } catch (error) {
-    console.error('Payout GET error:', error);
+    } catch (_error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Internal server error' },
+      { error: 'Internal server error' },
       { status: 500, headers: corsHeaders },
     );
   }
@@ -229,6 +230,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const rateLimitResponse = rateLimit(request, rateLimitConfigs.expensive, {
+      headers: corsHeaders,
+      identifier: `payout:${payload.userId}`,
+      errorMessage: 'Please wait before submitting another payout request.',
+    });
+    if (rateLimitResponse) {
+      return rateLimitResponse;
+    }
+
     const body = await request.json();
     const validation = payoutRequestSchema.safeParse(body);
 
@@ -239,11 +249,50 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { amount, payoutMethod, payoutMethodId, accountDetails, instantPayout, otpCode } = validation.data;
-    if (!/^\d{6}$/.test(otpCode)) {
+    const signedRequest = verifySignedRequest(request, validation.data);
+    if (!signedRequest.valid || !signedRequest.idempotencyKey) {
       return NextResponse.json(
-        { error: 'OTP verification failed' },
+        { error: 'Payout verification failed' },
+        { status: 401, headers: corsHeaders },
+      );
+    }
+
+    const { amount, payoutMethod, payoutMethodId, accountDetails, instantPayout, otpCode } = validation.data;
+    // SECURITY FIX: require a verified one-time OTP before allowing the payout request.
+    const otpValid = await verifyPayoutOtp(payload.userId, otpCode);
+    if (!otpValid) {
+      return NextResponse.json(
+        { error: 'Invalid or expired OTP' },
         { status: 400, headers: corsHeaders },
+      );
+    }
+
+    const referenceId = createIdempotencyReference('PAYOUT', signedRequest.idempotencyKey);
+    const existingPayoutRequest = await prisma.payoutRequest.findFirst({
+      where: {
+        userId: payload.userId,
+        referenceId,
+      },
+    });
+
+    if (existingPayoutRequest) {
+      return NextResponse.json(
+        {
+          message: 'Withdrawal request submitted successfully',
+          payoutRequest: {
+            id: existingPayoutRequest.id,
+            amount: existingPayoutRequest.amount,
+            feeAmount: existingPayoutRequest.feeAmount,
+            netAmount: existingPayoutRequest.netAmount || existingPayoutRequest.amount,
+            status: existingPayoutRequest.status,
+            payoutMethod: existingPayoutRequest.payoutMethod,
+            createdAt: existingPayoutRequest.createdAt,
+            referenceId: existingPayoutRequest.referenceId,
+            statusMessage: existingPayoutRequest.statusMessage,
+            riskStatus: existingPayoutRequest.riskStatus,
+          },
+        },
+        { headers: corsHeaders },
       );
     }
 
@@ -314,11 +363,10 @@ export async function POST(request: NextRequest) {
       : instantPayout
         ? 'processing'
         : 'pending';
-    const referenceId = createPayoutReference();
     const statusMessage = riskStatus === 'review'
       ? 'Queued for admin review before release'
       : instantPayout
-        ? 'Queued for RazorpayX instant payout sync'
+        ? 'Queued for secure instant payout processing'
         : 'Queued for standard bank processing';
 
     const result = await prisma.$transaction(async (tx) => {
@@ -337,14 +385,9 @@ export async function POST(request: NextRequest) {
           status: payoutStatus,
           statusMessage,
           providerPayload: JSON.stringify({
-            razorpayX: {
-              status: 'placeholder',
-              actions: [
-                'create_contact',
-                'create_fund_account',
-                'create_payout',
-                'webhook_status_sync',
-              ],
+            orchestration: {
+              idempotencyKey: signedRequest.idempotencyKey,
+              deviceFingerprint: signedRequest.deviceFingerprint,
             },
           }),
         },
@@ -429,10 +472,9 @@ export async function POST(request: NextRequest) {
       },
       { headers: corsHeaders },
     );
-  } catch (error) {
-    console.error('Payout POST error:', error);
+  } catch (_error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Internal server error' },
+      { error: 'Internal server error' },
       { status: 500, headers: corsHeaders },
     );
   }

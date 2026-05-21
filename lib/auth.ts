@@ -1,6 +1,6 @@
 import jwt from 'jsonwebtoken';
 import { NextRequest } from 'next/server';
-import { JWT_SECRET } from './env';
+import { JWT_REFRESH_SECRET, JWT_SECRET } from './env';
 import { isTokenBlacklisted } from './redis-token-blacklist';
 
 export interface JWTPayload {
@@ -26,8 +26,8 @@ export function signJwt(payload: JWTPayload): string {
  * @returns Refresh token string (30-day expiry)
  */
 export function signRefreshToken(payload: JWTPayload): string {
-  return jwt.sign(payload, JWT_SECRET, {
-    expiresIn: '30d',
+  return jwt.sign(payload, JWT_REFRESH_SECRET, {
+    expiresIn: '7d',
   });
 }
 

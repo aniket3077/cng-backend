@@ -27,13 +27,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Blacklist the token
-    blacklistToken(token);
+    // Blacklist the token (await so it's persisted before responding)
+    await blacklistToken(token);
 
-    return NextResponse.json(
+    const response = NextResponse.json(
       { success: true, message: 'Logged out successfully' },
       { headers: corsHeaders }
     );
+    // Clear the HttpOnly cookie
+    response.cookies.set({
+      name: 'token',
+      value: '',
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 0,
+      path: '/',
+    });
+    return response;
   } catch (error) {
     return NextResponse.json(
       { error: 'Logout failed' },

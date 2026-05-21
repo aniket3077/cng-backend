@@ -19,6 +19,11 @@ dist/
 .env.test.local
 .env.production.local
 
+# SQLite dev database — never commit this; it may contain real credentials or PII
+prisma/dev.db
+prisma/*.db
+prisma/*.db-journal
+
 # Misc
 .DS_Store
 *.pem

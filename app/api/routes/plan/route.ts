@@ -20,7 +20,6 @@ const routePlanSchema = z.object({
   fuelType: z.enum(['CNG']).optional(),
   avoidTolls: z.boolean().optional().default(false),
   avoidHighways: z.boolean().optional().default(false),
-  googleMapsApiKey: z.string().optional(),
 });
 
 /**
@@ -73,15 +72,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { origin, destination, travelMode, fuelType, avoidTolls, avoidHighways, googleMapsApiKey: requestApiKey } = validation.data;
-
-    console.log('Route planning request:', { origin, destination, travelMode, fuelType });
-
-    const googleMapsApiKey = requestApiKey || process.env.GOOGLE_MAPS_API_KEY;
-    if (!googleMapsApiKey) {
-      console.error('GOOGLE_MAPS_API_KEY is not configured in environment variables');
-      console.warn('Falling back to simple route because Google Maps key is missing');
-    }
+    const { origin, destination, travelMode, fuelType, avoidTolls, avoidHighways } = validation.data;
 
     // Get route from Google Directions API
     const directions = await getGoogleDirections(
@@ -89,11 +80,8 @@ export async function POST(request: NextRequest) {
       destination,
       travelMode,
       avoidTolls,
-      avoidHighways,
-      googleMapsApiKey
+      avoidHighways
     );
-
-    console.log('Route found, polyline length:', directions.route.overview_polyline.points.length);
 
     // Find stations along the route
     const stationsAlongRoute = await findStationsAlongRoute(
@@ -112,8 +100,6 @@ export async function POST(request: NextRequest) {
       steps: directions.route.legs[0].steps.length,
     };
 
-    console.log('Route planning successful. Stations found:', stationsAlongRoute.length);
-
     return NextResponse.json({
       success: true,
       route: {
@@ -127,10 +113,9 @@ export async function POST(request: NextRequest) {
       travelMode,
       timestamp: new Date().toISOString(),
     });
-  } catch (error) {
-    console.error('Error planning route:', error);
+  } catch (_error) {
     return NextResponse.json(
-      { error: 'Failed to plan route', details: error instanceof Error ? error.message : 'Unknown error' },
+      { error: 'Failed to plan route' },
       { status: 500 }
     );
   }
@@ -144,14 +129,12 @@ async function getGoogleDirections(
   destination: { lat: number; lng: number },
   mode: string,
   avoidTolls: boolean,
-  avoidHighways: boolean,
-  googleMapsApiKey?: string
+  avoidHighways: boolean
 ) {
   try {
-    const apiKey = googleMapsApiKey || process.env.GOOGLE_MAPS_API_KEY || '';
+    const apiKey = process.env.GOOGLE_MAPS_API_KEY || '';
 
     if (!apiKey) {
-      console.error('Google Maps API key is missing!');
       return buildFallbackDirections(origin, destination, mode);
     }
 
@@ -168,41 +151,27 @@ async function getGoogleDirections(
     if (avoidTolls) params.append('avoid', 'tolls');
     if (avoidHighways) params.append('avoid', 'highways');
 
-    const url = `https://maps.googleapis.com/maps/api/directions/json?${params.toString()}`;
-    console.log('Calling Google Directions API:', { origin: originStr, destination: destinationStr, mode });
-
-    const response = await fetch(url);
+    const response = await fetch(`https://maps.googleapis.com/maps/api/directions/json?${params.toString()}`);
 
     if (!response.ok) {
-      console.error('Google Directions API HTTP error:', response.status, response.statusText);
       return buildFallbackDirections(origin, destination, mode);
     }
 
     const data = await response.json();
 
-    console.log('Google Directions API status:', data.status);
-
     if (data.status !== 'OK') {
-      console.error('Google Directions API error:', {
-        status: data.status,
-        error_message: data.error_message,
-        available_travel_modes: data.available_travel_modes
-      });
       return buildFallbackDirections(origin, destination, mode);
     }
 
     if (data.routes && data.routes.length > 0) {
-      console.log('Route found successfully, polyline points length:', data.routes[0].overview_polyline?.points?.length || 0);
       return {
         route: data.routes[0],
         status: data.status,
       };
     }
 
-    console.warn('No routes found in response');
     return buildFallbackDirections(origin, destination, mode);
-  } catch (error) {
-    console.error('Google Directions API error:', error);
+  } catch (_error) {
     return buildFallbackDirections(origin, destination, mode);
   }
 }
@@ -319,8 +288,7 @@ async function findStationsAlongRoute(
       .slice(0, 15); // Top 15 stations along route
 
     return stationsNearRoute;
-  } catch (error) {
-    console.error('Error finding stations along route:', error);
+  } catch (_error) {
     return [];
   }
 }

@@ -5,6 +5,7 @@ import { prisma, isPrismaUnavailableError } from '@/lib/prisma';
 import { signJwt } from '@/lib/auth';
 import { corsHeaders } from '@/lib/api-utils';
 import { rateLimit, rateLimitConfigs } from '@/lib/rate-limit';
+import { clearFailedLogin, isLoginLocked, registerFailedLogin } from '@/lib/login-lockout';
 
 const loginSchema = z.object({
   email: z.string().email().trim().toLowerCase(),
@@ -34,6 +35,14 @@ export async function POST(request: NextRequest) {
 
     const { email, password } = validation.data;
 
+    // SECURITY FIX: lock out repeated owner login failures for a short window.
+    if (await isLoginLocked(email)) {
+      return NextResponse.json(
+        { error: 'Account temporarily locked. Try again in 15 minutes.' },
+        { status: 429, headers: corsHeaders }
+      );
+    }
+
     const owner = await prisma.stationOwner.findUnique({
       where: { email: email.toLowerCase() },
       include: {
@@ -50,6 +59,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (!owner) {
+      await registerFailedLogin(email);
       return NextResponse.json(
         { error: 'Invalid email or password' },
         { status: 401, headers: corsHeaders }
@@ -58,11 +68,14 @@ export async function POST(request: NextRequest) {
 
     const isPasswordValid = await bcrypt.compare(password, owner.passwordHash);
     if (!isPasswordValid) {
+      await registerFailedLogin(email);
       return NextResponse.json(
         { error: 'Invalid email or password' },
         { status: 401, headers: corsHeaders }
       );
     }
+
+    await clearFailedLogin(email);
 
     const token = signJwt(
       { userId: owner.id, email: owner.email, role: 'owner' }

@@ -29,9 +29,9 @@ export async function POST(request: NextRequest) {
     const { placeId } = validation.data;
 
     // Build Google Places Details API request
-    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
+    const apiKey = process.env.GOOGLE_MAPS_API_KEY;
     if (!apiKey) {
-      return NextResponse.json({ error: 'Google Maps API key is not configured' }, { status: 500 });
+      return NextResponse.json({ error: 'Places service is unavailable' }, { status: 503 });
     }
     const params = new URLSearchParams({
       place_id: placeId,
@@ -68,8 +68,7 @@ export async function POST(request: NextRequest) {
       { error: 'Failed to get place details', status: data.status },
       { status: 500 }
     );
-  } catch (error) {
-    console.error('Error in place details:', error);
+  } catch (_error) {
     return NextResponse.json(
       { error: 'Failed to get place details' },
       { status: 500 }
@@ -99,8 +98,7 @@ export async function GET(request: NextRequest) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ placeId }),
     }));
-  } catch (error) {
-    console.error('Error in GET place details:', error);
+  } catch (_error) {
     return NextResponse.json(
       { error: 'Failed to get place details' },
       { status: 500 }

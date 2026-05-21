@@ -415,8 +415,6 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      console.log('Creating OTP session for:', account.email);
-
       const accountKey = account.email.toLowerCase();
       const existingSessionToken = validation.data.sessionToken
         ? parsePasswordResetOtpSessionToken(validation.data.sessionToken)
@@ -696,9 +694,8 @@ export async function POST(request: NextRequest) {
         : null;
 
       if (verifiedResetToken && doesSessionMatchAccount(verifiedResetToken, account)) {
-        console.log('Validated stateless reset token for:', account.email);
+        // Verified via signed stateless token.
       } else if (validation.data.resetToken) {
-        console.log('Validating resetToken for:', account.email);
         if (!session) {
           return NextResponse.json(
             { success: false, error: 'Reset session expired. Please request a new OTP.' },
@@ -707,7 +704,6 @@ export async function POST(request: NextRequest) {
         }
 
         if (!session.resetTokenHash || !session.resetTokenExpiresAt || session.resetTokenExpiresAt <= now) {
-          console.log('Reset token expired or missing');
           passwordResetSessions.delete(accountKey);
           return NextResponse.json(
             { success: false, error: 'Reset session expired. Please verify OTP again.' },
@@ -717,14 +713,12 @@ export async function POST(request: NextRequest) {
 
         const expectedResetTokenHash = createResetTokenHash(account.email, validation.data.resetToken);
         if (session.resetTokenHash !== expectedResetTokenHash) {
-          console.log('Reset token hash mismatch');
           return NextResponse.json(
             { success: false, error: 'Invalid reset session. Please verify OTP again.' },
             { status: 401, headers: corsHeaders }
           );
         }
       } else if (validation.data.otp && validation.data.sessionToken) {
-        console.log('Validating OTP session token for:', account.email);
         const sessionTokenPayload = parsePasswordResetOtpSessionToken(validation.data.sessionToken);
 
         if (!sessionTokenPayload || !doesSessionMatchAccount(sessionTokenPayload, account)) {
@@ -777,7 +771,6 @@ export async function POST(request: NextRequest) {
           { status: 200, headers: corsHeaders }
         );
       } else if (validation.data.otp) {
-        console.log('Validating OTP for:', account.email);
         if (!session) {
           return NextResponse.json(
             { success: false, error: 'Reset session expired. Please request a new OTP.' },
@@ -785,9 +778,7 @@ export async function POST(request: NextRequest) {
           );
         }
 
-        console.log('Session expires at:', session.expiresAt, 'Current time:', now);
         if (session.expiresAt <= now) {
-          console.log('OTP expired');
           passwordResetSessions.delete(accountKey);
           return NextResponse.json(
             { success: false, error: 'OTP expired' },
@@ -796,10 +787,7 @@ export async function POST(request: NextRequest) {
         }
 
         const expectedOtpHash = createOtpHash(account.email, validation.data.otp);
-        console.log('Expected OTP hash exists:', !!session.otpHash);
-        console.log('OTP hash match:', session.otpHash === expectedOtpHash);
         if (!session.otpHash || session.otpHash !== expectedOtpHash) {
-          console.log('Invalid OTP');
           return NextResponse.json(
             { success: false, error: 'Invalid OTP' },
             { status: 401, headers: corsHeaders }
@@ -816,28 +804,23 @@ export async function POST(request: NextRequest) {
       }
 
       phase = 'hash_new_password';
-      console.log('Hashing new password for:', account.email);
       const passwordHash = await bcrypt.hash(validation.data.newPassword, 12);
 
       phase = 'persist_new_password';
-      console.log('Updating password in database for:', account.email, 'Account type:', account.accountType);
       try {
         if (account.accountType === 'user') {
           await prisma.user.update({
             where: { email: account.email },
             data: { passwordHash },
           });
-          console.log('Updated user password successfully');
         } else {
           await prisma.stationOwner.update({
             where: { email: account.email },
             data: { passwordHash },
           });
-          console.log('Updated station owner password successfully');
         }
 
         passwordResetSessions.delete(accountKey);
-        console.log('Deleted password reset session for:', account.email);
 
         return NextResponse.json(
           {
@@ -847,13 +830,10 @@ export async function POST(request: NextRequest) {
           { status: 200, headers: corsHeaders }
         );
       } catch (dbError) {
-        const dbErrorMessage = dbError instanceof Error ? dbError.message : String(dbError);
-        console.error('Database error during password update:', dbErrorMessage, dbError);
         return NextResponse.json(
           {
             success: false,
             error: 'Failed to update password. Please try again.',
-            ...(process.env.NODE_ENV !== 'production' && { debug: dbErrorMessage }),
           },
           { status: 500, headers: corsHeaders }
         );
@@ -865,7 +845,6 @@ export async function POST(request: NextRequest) {
       { status: 400, headers: corsHeaders }
     );
   } catch (error) {
-    console.error(`Password reset error at phase "${phase}":`, error);
     if (isPrismaUnavailableError(error)) {
       return NextResponse.json(
         {

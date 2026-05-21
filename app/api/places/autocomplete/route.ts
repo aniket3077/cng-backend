@@ -33,9 +33,9 @@ export async function POST(request: NextRequest) {
     const { input, lat, lng, radius, types } = validation.data;
 
     // Build Google Places Autocomplete API request
-    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
+    const apiKey = process.env.GOOGLE_MAPS_API_KEY;
     if (!apiKey) {
-      return NextResponse.json({ error: 'Google Maps API key is not configured' }, { status: 500 });
+      return NextResponse.json({ error: 'Places service is unavailable' }, { status: 503 });
     }
     const params = new URLSearchParams({
       input: input,
@@ -59,15 +59,13 @@ export async function POST(request: NextRequest) {
     );
 
     if (!response.ok) {
-      console.error('Google API error:', response.status, response.statusText);
       return NextResponse.json(
-        { error: 'Google Places API request failed', status: response.status },
+        { error: 'Failed to fetch place suggestions' },
         { status: 500 }
       );
     }
 
     const data = await response.json();
-    console.log('Google Places API response:', data.status);
 
     if (data.status === 'OK' || data.status === 'ZERO_RESULTS') {
       const predictions = data.predictions?.map((prediction: any) => ({
@@ -85,13 +83,11 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    console.error('Google Places API error:', data.status, data.error_message);
     return NextResponse.json(
-      { error: data.error_message || 'Failed to get place suggestions', status: data.status },
+      { error: 'Failed to get place suggestions' },
       { status: 500 }
     );
-  } catch (error) {
-    console.error('Error in place autocomplete:', error);
+  } catch (_error) {
     return NextResponse.json(
       { error: 'Failed to get place suggestions' },
       { status: 500 }
@@ -130,8 +126,7 @@ export async function GET(request: NextRequest) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     }));
-  } catch (error) {
-    console.error('Error in GET autocomplete:', error);
+  } catch (_error) {
     return NextResponse.json(
       { error: 'Failed to get place suggestions' },
       { status: 500 }

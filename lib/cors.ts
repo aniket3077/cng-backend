@@ -38,11 +38,28 @@ export function normalizeOrigin(origin: string): string | null {
 
 export function parseAllowedOrigins(rawOrigins = process.env.ALLOWED_ORIGINS): string[] {
   const sanitizedOrigins = sanitizeEnvValue(rawOrigins);
-  const normalizedOrigins = (sanitizedOrigins
-    ? sanitizedOrigins.split(',').map(origin => normalizeOrigin(origin)).filter(Boolean)
-    : ['*']) as string[];
+  if (!sanitizedOrigins) {
+    if (process.env.NODE_ENV === 'development') {
+      return ['http://localhost:5173', 'http://localhost:3000'];
+    }
 
-  return normalizedOrigins.length > 0 ? [...new Set(normalizedOrigins)] : ['*'];
+    // SECURITY FIX: never default to wildcard in production
+    console.error('Critical: ALLOWED_ORIGINS is not configured in production. Cross-origin requests will be blocked.');
+    return [];
+  }
+
+  const normalizedOrigins = sanitizedOrigins
+    .split(',')
+    .map((origin) => normalizeOrigin(origin))
+    .filter(Boolean) as string[];
+
+  // SECURITY FIX: wildcard CORS is never permitted in production
+  if (process.env.NODE_ENV === 'production' && normalizedOrigins.includes('*')) {
+    console.error('Critical: Wildcard CORS (*) is not allowed in production. Blocking all origins.');
+    return [];
+  }
+
+  return [...new Set(normalizedOrigins)];
 }
 
 export const ALLOWED_ORIGINS = parseAllowedOrigins();

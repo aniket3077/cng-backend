@@ -99,6 +99,13 @@ export async function POST(request: NextRequest) {
             );
         }
 
+        if (plan.id !== 'free_trial') {
+            return NextResponse.json(
+                { error: 'Paid subscriptions must be activated through verified payment only' },
+                { status: 403, headers: corsHeaders }
+            );
+        }
+
         // Calculate expire date
         const startDate = new Date();
         const endDate = new Date();
@@ -142,8 +149,7 @@ export async function POST(request: NextRequest) {
             { status: 200, headers: corsHeaders }
         );
 
-    } catch (error) {
-        console.error('Subscription error:', error);
+    } catch (_error) {
         return NextResponse.json(
             { error: 'Internal server error' },
             { status: 500, headers: corsHeaders }

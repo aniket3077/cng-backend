@@ -7,10 +7,11 @@ import {
   getPrismaInitError,
   isPrismaUnavailableError,
 } from '@/lib/prisma';
-import { signJwt } from '@/lib/auth';
+import { signJwt, signRefreshToken } from '@/lib/auth';
 import { corsHeaders } from '@/lib/api-utils';
 import { rateLimiters } from '@/lib/rate-limiter';
 import { securityLogger } from '@/lib/security-logger';
+import { clearFailedLogin, isLoginLocked, registerFailedLogin } from '@/lib/login-lockout';
 
 const loginSchema = z.object({
   email: z.string().email().trim().toLowerCase(),
@@ -46,6 +47,14 @@ export async function POST(request: NextRequest) {
 
       const { email, password } = validation.data;
 
+      // SECURITY FIX: lock out repeated customer login failures for a short window.
+      if (await isLoginLocked(email)) {
+        return NextResponse.json(
+          { error: 'Account temporarily locked. Try again in 15 minutes.' },
+          { status: 429, headers: corsHeaders }
+        );
+      }
+
       const user = await prisma.user.findUnique({
         where: { email },
         select: {
@@ -59,6 +68,7 @@ export async function POST(request: NextRequest) {
       });
 
       if (!user) {
+        await registerFailedLogin(email);
         securityLogger.logAuthenticationAttempt(req, email, false, 'User not found');
         return NextResponse.json(
           { error: 'Invalid email or password' },
@@ -68,6 +78,7 @@ export async function POST(request: NextRequest) {
 
       const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
       if (!isPasswordValid) {
+        await registerFailedLogin(email);
         securityLogger.logAuthenticationAttempt(req, email, false, 'Invalid password');
         return NextResponse.json(
           { error: 'Invalid email or password' },
@@ -75,7 +86,14 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      await clearFailedLogin(email);
+
       const token = signJwt({
+        userId: user.id,
+        email: user.email,
+        role: user.role,
+      });
+      const refreshToken = signRefreshToken({
         userId: user.id,
         email: user.email,
         role: user.role,
@@ -87,6 +105,7 @@ export async function POST(request: NextRequest) {
         {
           message: 'Login successful',
           token,
+          refreshToken,
           user: {
             id: user.id,
             email: user.email,

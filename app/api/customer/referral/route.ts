@@ -11,6 +11,7 @@ import {
   parseJson,
   syncUserCommissionBalances,
 } from '@/lib/referral-commission';
+import { rateLimit, rateLimitConfigs } from '@/lib/rate-limit';
 import { getPublicSubscriptionPlans } from '@/lib/subscription';
 
 export async function OPTIONS() {
@@ -187,7 +188,7 @@ export async function GET(request: NextRequest) {
           maximumWithdrawal: 50000,
           instantPayoutEnabled: true,
           otpRequired: true,
-          payoutRail: 'RazorpayX placeholder integration',
+          payoutRail: 'Secure payout orchestration with verified payment release',
           savedMethods,
         },
         referralHistory,
@@ -215,10 +216,9 @@ export async function GET(request: NextRequest) {
       },
       { headers: corsHeaders },
     );
-  } catch (error) {
-    console.error('Referral GET error:', error);
+  } catch (_error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Internal server error' },
+      { error: 'Internal server error' },
       { status: 500, headers: corsHeaders },
     );
   }
@@ -233,6 +233,15 @@ export async function POST(request: NextRequest) {
         { error: 'Forbidden' },
         { status: 403, headers: corsHeaders },
       );
+    }
+
+    const rateLimitResponse = rateLimit(request, rateLimitConfigs.expensive, {
+      headers: corsHeaders,
+      identifier: `referral:${payload.userId}`,
+      errorMessage: 'Please wait before trying another referral code.',
+    });
+    if (rateLimitResponse) {
+      return rateLimitResponse;
     }
 
     const body = await request.json();
@@ -283,14 +292,14 @@ export async function POST(request: NextRequest) {
 
     if (!referrer) {
       return NextResponse.json(
-        { error: 'Invalid referral code' },
-        { status: 404, headers: corsHeaders },
+        { error: 'Referral code could not be linked to this account' },
+        { status: 400, headers: corsHeaders },
       );
     }
 
     if (referrer.id === payload.userId) {
       return NextResponse.json(
-        { error: 'Cannot apply your own referral code' },
+        { error: 'Referral code could not be linked to this account' },
         { status: 400, headers: corsHeaders },
       );
     }
@@ -315,7 +324,13 @@ export async function POST(request: NextRequest) {
     }
 
     const { fingerprint, isStrongFingerprint } = buildDeviceFingerprint(request, explicitFingerprint);
-    const [existingUserOnFingerprint, existingReferralOnFingerprint] = await Promise.all([
+    const velocityWindowStart = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const [
+      existingUserOnFingerprint,
+      existingReferralOnFingerprint,
+      recentReferralCount,
+      recentDeviceReferralCount,
+    ] = await Promise.all([
       fingerprint
         ? prisma.user.findFirst({
             where: {
@@ -331,6 +346,20 @@ export async function POST(request: NextRequest) {
             select: { id: true },
           })
         : Promise.resolve(null),
+      prisma.referral.count({
+        where: {
+          referrerId: referrer.id,
+          createdAt: { gte: velocityWindowStart },
+        },
+      }),
+      fingerprint
+        ? prisma.referral.count({
+            where: {
+              deviceFingerprint: fingerprint,
+              createdAt: { gte: velocityWindowStart },
+            },
+          })
+        : Promise.resolve(0),
     ]);
 
     const referralAssessment = assessReferralRisk({
@@ -343,6 +372,8 @@ export async function POST(request: NextRequest) {
         referrer.email.toLowerCase() === user.email.toLowerCase() ||
         (referrer.phone && user.phone && referrer.phone === user.phone)
       ),
+      recentReferralCount,
+      recentDeviceReferralCount,
     });
 
     const referral = await prisma.$transaction(async (tx) => {
@@ -396,10 +427,9 @@ export async function POST(request: NextRequest) {
       },
       { headers: corsHeaders },
     );
-  } catch (error) {
-    console.error('Referral POST error:', error);
+  } catch (_error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Internal server error' },
+      { error: 'Internal server error' },
       { status: 500, headers: corsHeaders },
     );
   }

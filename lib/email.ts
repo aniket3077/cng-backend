@@ -16,25 +16,17 @@ interface EmailOptions {
 export async function sendEmail({ to, subject, html }: EmailOptions): Promise<boolean> {
   try {
     if (!resend) {
-      console.warn('Email delivery skipped because RESEND_API_KEY is not configured.');
       return false;
     }
-
-    console.log('Sending email to:', to);
-    console.log('From:', FROM_EMAIL);
-    console.log('Subject:', subject);
     
-    const result = await resend.emails.send({
+    await resend.emails.send({
       from: FROM_EMAIL,
       to,
       subject,
       html,
     });
-    
-    console.log('Email sent successfully:', result);
     return true;
   } catch (error) {
-    console.error('Failed to send email:', error);
     return false;
   }
 }

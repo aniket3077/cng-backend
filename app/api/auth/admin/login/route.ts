@@ -11,6 +11,7 @@ import { signJwt, signRefreshToken } from '@/lib/auth';
 import { corsHeaders } from '@/lib/api-utils';
 import { rateLimiters } from '@/lib/rate-limiter';
 import { securityLogger } from '@/lib/security-logger';
+import { clearFailedLogin, isLoginLocked, registerFailedLogin } from '@/lib/login-lockout';
 
 const loginSchema = z.object({
   email: z.string().email().trim().toLowerCase(),
@@ -45,11 +46,20 @@ export async function POST(request: NextRequest) {
 
       const { email, password } = validation.data;
 
+      // SECURITY FIX: lock out repeated admin login failures for a short window.
+      if (await isLoginLocked(email)) {
+        return NextResponse.json(
+          { error: 'Account temporarily locked. Try again in 15 minutes.' },
+          { status: 429, headers: corsHeaders }
+        );
+      }
+
       const admin = await prisma.admin.findUnique({
         where: { email },
       });
 
       if (!admin) {
+        await registerFailedLogin(email);
         securityLogger.logAuthenticationAttempt(req, email, false, 'Admin not found');
         return NextResponse.json(
           { error: 'Invalid email or password' },
@@ -59,12 +69,15 @@ export async function POST(request: NextRequest) {
 
       const isPasswordValid = await bcrypt.compare(password, admin.passwordHash);
       if (!isPasswordValid) {
+        await registerFailedLogin(email);
         securityLogger.logAuthenticationAttempt(req, email, false, 'Invalid password');
         return NextResponse.json(
           { error: 'Invalid email or password' },
           { status: 401, headers: corsHeaders }
         );
       }
+
+      await clearFailedLogin(email);
 
       const token = signJwt({
         userId: admin.id,

@@ -1,34 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import jwt from 'jsonwebtoken';
 import { PrismaClient } from '@prisma/client';
 import { corsHeaders } from '@/lib/api-utils';
+import { requireAuth } from '@/lib/auth';
 
 const prisma = new PrismaClient();
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 
-export async function OPTIONS() {
-  return NextResponse.json({}, { headers: corsHeaders });
-}
-
-function verifyToken(request: NextRequest): string | null {
-  const authHeader = request.headers.get('authorization');
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return null;
-  }
-
-  const token = authHeader.substring(7);
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET) as { ownerId: string; type: string };
-    if (decoded.type !== 'owner') {
-      return null;
-    }
-    return decoded.ownerId;
-  } catch (error) {
-    return null;
-  }
-}
-
-// Generate ticket number
 function generateTicketNumber(): string {
   const date = new Date();
   const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
@@ -36,17 +12,22 @@ function generateTicketNumber(): string {
   return `FBT-${dateStr}-${random}`;
 }
 
-// GET - List owner's support tickets
+export async function OPTIONS() {
+  return NextResponse.json({}, { headers: corsHeaders });
+}
+
 export async function GET(request: NextRequest) {
   try {
-    const ownerId = verifyToken(request);
-    if (!ownerId) {
+    // SECURITY FIX: verify the owner session via the shared auth helper.
+    const payload = await requireAuth(request);
+    if (payload.role !== 'owner') {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401, headers: corsHeaders }
       );
     }
 
+    const ownerId = payload.userId;
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status');
 
@@ -84,17 +65,18 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST - Create support ticket
 export async function POST(request: NextRequest) {
   try {
-    const ownerId = verifyToken(request);
-    if (!ownerId) {
+    // SECURITY FIX: verify the owner session via the shared auth helper.
+    const payload = await requireAuth(request);
+    if (payload.role !== 'owner') {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401, headers: corsHeaders }
       );
     }
 
+    const ownerId = payload.userId;
     const body = await request.json();
     const { subject, description, category, priority, stationId } = body;
 
@@ -105,10 +87,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Generate unique ticket number
     let ticketNumber;
     let isUnique = false;
-    
+
     while (!isUnique) {
       ticketNumber = generateTicketNumber();
       const existing = await prisma.supportTicket.findUnique({
@@ -140,7 +121,6 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Log activity
     await prisma.activityLog.create({
       data: {
         ownerId,
@@ -150,7 +130,6 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Create notification
     await prisma.notification.create({
       data: {
         ownerId,
@@ -177,17 +156,18 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// PUT - Reply to ticket
 export async function PUT(request: NextRequest) {
   try {
-    const ownerId = verifyToken(request);
-    if (!ownerId) {
+    // SECURITY FIX: verify the owner session via the shared auth helper.
+    const payload = await requireAuth(request);
+    if (payload.role !== 'owner') {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401, headers: corsHeaders }
       );
     }
 
+    const ownerId = payload.userId;
     const { searchParams } = new URL(request.url);
     const ticketId = searchParams.get('id');
 
@@ -208,7 +188,6 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // Verify ticket ownership
     const ticket = await prisma.supportTicket.findFirst({
       where: { id: ticketId, ownerId },
     });
@@ -220,23 +199,22 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // Create reply
     const reply = await prisma.ticketReply.create({
       data: {
         ticketId,
         message,
+        isInternal: false,
         createdBy: ownerId,
         createdByType: 'owner',
       },
     });
 
-    // Update ticket status if it was resolved
-    if (ticket.status === 'resolved' || ticket.status === 'closed') {
-      await prisma.supportTicket.update({
-        where: { id: ticketId },
-        data: { status: 'open' },
-      });
-    }
+    await prisma.supportTicket.update({
+      where: { id: ticketId },
+      data: {
+        updatedAt: new Date(),
+      },
+    });
 
     return NextResponse.json(
       {
@@ -246,7 +224,7 @@ export async function PUT(request: NextRequest) {
       { status: 201, headers: corsHeaders }
     );
   } catch (error) {
-    console.error('Reply ticket error:', error);
+    console.error('Add reply error:', error);
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500, headers: corsHeaders }

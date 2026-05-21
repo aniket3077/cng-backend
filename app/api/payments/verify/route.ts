@@ -4,14 +4,13 @@ import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { corsHeaders } from '@/lib/api-utils';
 import { requireAuth } from '@/lib/auth';
+import { RAZORPAY_KEY_SECRET } from '@/lib/env';
 import { getPlanConfig } from '@/lib/subscription';
 import {
   REFERRAL_COMMISSION_RATE,
   calculateCommission,
   syncUserCommissionBalances,
 } from '@/lib/referral-commission';
-
-const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || 'your_razorpay_secret_key';
 
 const verificationSchema = z.object({
   razorpay_order_id: z.string().min(1),
@@ -60,20 +59,36 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // SECURITY FIX: block all dev/test signatures in production
+    if (
+      razorpay_signature.startsWith('sim_') ||
+      razorpay_signature.startsWith('dev_') ||
+      razorpay_signature.startsWith('test_') ||
+      razorpay_payment_id.startsWith('pay_simulated_') ||
+      razorpay_payment_id.startsWith('pay_test_') ||
+      razorpay_payment_id.startsWith('pay_dev_')
+    ) {
+      return NextResponse.json(
+        { error: 'Invalid payment signature' },
+        { status: 401, headers: corsHeaders },
+      );
+    }
+
     const generatedSignature = crypto
       .createHmac('sha256', RAZORPAY_KEY_SECRET)
       .update(`${razorpay_order_id}|${razorpay_payment_id}`)
       .digest('hex');
 
-    const isSimulatedPayment =
-      process.env.NODE_ENV !== 'production' &&
-      razorpay_payment_id.startsWith('pay_simulated_') &&
-      razorpay_signature === 'sim_sig';
+    const providedSignature = Buffer.from(razorpay_signature, 'utf8');
+    const expectedSignature = Buffer.from(generatedSignature, 'utf8');
 
-    if (!isSimulatedPayment && generatedSignature !== razorpay_signature) {
+    if (
+      providedSignature.length !== expectedSignature.length ||
+      !crypto.timingSafeEqual(providedSignature, expectedSignature)
+    ) {
       return NextResponse.json(
         { error: 'Invalid payment signature' },
-        { status: 400, headers: corsHeaders },
+        { status: 401, headers: corsHeaders },
       );
     }
 
@@ -195,7 +210,7 @@ export async function POST(request: NextRequest) {
                 sourceAmount: plan.price,
                 referredUserId: payload.userId,
                 paidAt: now.toISOString(),
-                verification: isSimulatedPayment ? 'simulated' : 'razorpay_signature',
+                verification: 'razorpay_signature',
               }),
               earnedAt: now,
               availableAt: commissionStatus === 'available' ? now : null,
@@ -257,9 +272,9 @@ export async function POST(request: NextRequest) {
       { status: 200, headers: corsHeaders },
     );
   } catch (error) {
-    console.error('Verify payment error:', error);
+    console.error('Payment verification failed:', error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Internal server error' },
+      { error: 'Payment verification failed' },
       { status: 500, headers: corsHeaders },
     );
   }

@@ -1,38 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
-import jwt from 'jsonwebtoken';
-import { PrismaClient } from '@prisma/client';
+import { requireAdmin } from '@/lib/auth';
 import { corsHeaders } from '@/lib/api-utils';
-
-const prisma = new PrismaClient();
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+import { prisma } from '@/lib/prisma';
 
 export async function OPTIONS() {
     return NextResponse.json({}, { headers: corsHeaders });
 }
 
-function verifyAdminToken(request: NextRequest): string | null {
-    const authHeader = request.headers.get('authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return null;
-    }
-
-    const token = authHeader.substring(7);
-    try {
-        const decoded = jwt.verify(token, JWT_SECRET) as { userId: string; role: string };
-        if (decoded.role !== 'admin') {
-            return null;
-        }
-        return decoded.userId;
-    } catch (error) {
-        return null;
-    }
-}
-
 // GET - List all users with filters and pagination
 export async function GET(request: NextRequest) {
     try {
-        const adminId = await verifyAdminToken(request);
-        if (!adminId) {
+        // SECURITY FIX: require a verified admin session for user management.
+        const admin = await requireAdmin(request);
+        if (!admin) {
             return NextResponse.json(
                 { error: 'Unauthorized' },
                 { status: 401, headers: corsHeaders }
@@ -105,8 +85,9 @@ export async function GET(request: NextRequest) {
 // PUT - Update user details (subscription)
 export async function PUT(request: NextRequest) {
     try {
-        const adminId = await verifyAdminToken(request);
-        if (!adminId) {
+        // SECURITY FIX: require a verified admin session before updating users.
+        const admin = await requireAdmin(request);
+        if (!admin) {
             return NextResponse.json(
                 { error: 'Unauthorized' },
                 { status: 401, headers: corsHeaders }
@@ -158,8 +139,9 @@ export async function PUT(request: NextRequest) {
 // DELETE - Delete user
 export async function DELETE(request: NextRequest) {
     try {
-        const adminId = await verifyAdminToken(request);
-        if (!adminId) {
+        // SECURITY FIX: require a verified admin session before deleting users.
+        const admin = await requireAdmin(request);
+        if (!admin) {
             return NextResponse.json(
                 { error: 'Unauthorized' },
                 { status: 401, headers: corsHeaders }
@@ -184,7 +166,7 @@ export async function DELETE(request: NextRequest) {
         // Log activity
         await prisma.activityLog.create({
             data: {
-                adminId,
+                adminId: admin.userId,
                 action: 'user_deleted',
                 description: `User ${userId} deleted by admin`,
             },

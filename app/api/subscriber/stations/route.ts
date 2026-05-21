@@ -1,44 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
-import jwt from 'jsonwebtoken';
-import { PrismaClient } from '@prisma/client';
 import { corsHeaders } from '@/lib/api-utils';
-
-const prisma = new PrismaClient();
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+import { requireAuth } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
 
 export async function OPTIONS() {
   return NextResponse.json({}, { headers: corsHeaders });
 }
 
-// Verify JWT token and extract owner ID
-function verifyToken(request: NextRequest): string | null {
-  const authHeader = request.headers.get('authorization');
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return null;
-  }
-
-  const token = authHeader.substring(7);
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET) as { ownerId: string; type: string };
-    if (decoded.type !== 'owner') {
-      return null;
-    }
-    return decoded.ownerId;
-  } catch (error) {
-    return null;
-  }
-}
-
-// GET - List owner's stations
 export async function GET(request: NextRequest) {
   try {
-    const ownerId = verifyToken(request);
-    if (!ownerId) {
+    const payload = await requireAuth(request);
+    if (payload.role !== 'owner') {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401, headers: corsHeaders }
       );
     }
+
+    const ownerId = payload.userId;
 
     const stations = await prisma.station.findMany({
       where: { ownerId },
@@ -78,17 +57,17 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST - Register new station
 export async function POST(request: NextRequest) {
   try {
-    const ownerId = verifyToken(request);
-    if (!ownerId) {
+    const payload = await requireAuth(request);
+    if (payload.role !== 'owner') {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401, headers: corsHeaders }
       );
     }
 
+    const ownerId = payload.userId;
     const body = await request.json();
     const {
       name,
@@ -104,7 +83,6 @@ export async function POST(request: NextRequest) {
       amenities,
     } = body;
 
-    // Validation
     if (!name || !address || !city || !state || !lat || !lng || !fuelTypes) {
       return NextResponse.json(
         { error: 'Missing required fields' },
@@ -112,7 +90,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create station
     const station = await prisma.station.create({
       data: {
         name,
@@ -132,7 +109,6 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Log activity
     await prisma.activityLog.create({
       data: {
         ownerId,
@@ -142,14 +118,13 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Create notification
     await prisma.notification.create({
       data: {
         ownerId,
-        title: 'Station Submitted for Review',
-        message: `Your station "${name}" has been submitted and is pending admin approval.`,
+        title: 'Station submitted',
+        message: `Your station "${name}" has been submitted for approval.`,
         type: 'info',
-        category: 'station_approval',
+        isRead: false,
       },
     });
 
@@ -169,17 +144,17 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// PUT - Update station
 export async function PUT(request: NextRequest) {
   try {
-    const ownerId = verifyToken(request);
-    if (!ownerId) {
+    const payload = await requireAuth(request);
+    if (payload.role !== 'owner') {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401, headers: corsHeaders }
       );
     }
 
+    const ownerId = payload.userId;
     const { searchParams } = new URL(request.url);
     const stationId = searchParams.get('id');
 
@@ -190,14 +165,13 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // Verify ownership
     const existingStation = await prisma.station.findFirst({
       where: { id: stationId, ownerId },
     });
 
     if (!existingStation) {
       return NextResponse.json(
-        { error: 'Station not found or unauthorized' },
+        { error: 'Station not found or access denied' },
         { status: 404, headers: corsHeaders }
       );
     }
@@ -217,7 +191,7 @@ export async function PUT(request: NextRequest) {
       amenities,
     } = body;
 
-    // Update station
+    // SECURITY FIX: owners cannot self-approve their stations
     const station = await prisma.station.update({
       where: { id: stationId },
       data: {
@@ -226,22 +200,12 @@ export async function PUT(request: NextRequest) {
         ...(city && { city }),
         ...(state && { state }),
         ...(postalCode !== undefined && { postalCode }),
-        ...(lat && { lat: parseFloat(lat) }),
-        ...(lng && { lng: parseFloat(lng) }),
+        ...(lat !== undefined && { lat: parseFloat(lat) }),
+        ...(lng !== undefined && { lng: parseFloat(lng) }),
         ...(fuelTypes && { fuelTypes }),
         ...(phone !== undefined && { phone }),
         ...(openingHours !== undefined && { openingHours }),
         ...(amenities !== undefined && { amenities }),
-      },
-    });
-
-    // Log activity
-    await prisma.activityLog.create({
-      data: {
-        ownerId,
-        stationId: station.id,
-        action: 'station_updated',
-        description: `Station "${station.name}" details updated`,
       },
     });
 

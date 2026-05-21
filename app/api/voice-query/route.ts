@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/auth';
+import { rateLimit, rateLimitConfigs } from '@/lib/rate-limit';
 import { checkUserSubscription } from '@/lib/user-subscription';
+import { corsHeaders } from '@/lib/api-utils';
 
 /**
  * Voice Query Processing API
@@ -15,6 +17,15 @@ interface VoiceQueryRequest {
   query: string;
   lat?: number;
   lng?: number;
+}
+
+function sanitizeVoiceQuery(value: string) {
+  return value
+    .replace(/[\u0000-\u001F\u007F]/g, ' ')
+    .replace(/[^a-zA-Z0-9\s,?.\-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 160);
 }
 
 interface StationWithDistance {
@@ -47,52 +58,73 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
   return R * c;
 }
 
-async function getApprovedStations() {
-  return await prisma.station.findMany({
-    where: {
-      // Only approved stations
-      approvalStatus: 'approved',
+function buildApprovedStationWhere(query: string, lat?: number, lng?: number) {
+  const where: any = {
+    approvalStatus: 'approved',
+    isVerified: true,
+    AND: [
+      {
+        OR: [
+          { fuelTypes: { contains: 'CNG' } },
+          { fuelTypes: { contains: 'cng' } },
+        ],
+      },
+    ],
+    OR: [
+      {
+        subscriptions: {
+          some: {
+            status: 'active',
+            endDate: {
+              gte: new Date(),
+            },
+          },
+        },
+      },
+      {
+        owner: {
+          is: {
+            subscriptionEndsAt: {
+              gte: new Date(),
+            },
+          },
+        },
+      },
+    ],
+  };
 
-      // Only verified stations
-      isVerified: true,
+  if (lat != null && lng != null) {
+    where.AND.push({
+      lat: {
+        gte: lat - 0.15,
+        lte: lat + 0.15,
+      },
+    });
+    where.AND.push({
+      lng: {
+        gte: lng - 0.15,
+        lte: lng + 0.15,
+      },
+    });
+  }
 
-      // Only stations with active subscriptions
-      // NOTE: StationOwner does not have a `subscriptions` relation in the current schema.
-      // We accept either:
-      // 1) A Station-level active Subscription row, OR
-      // 2) An active owner subscription window (StationOwner.subscriptionEndsAt)
+  if (query.trim()) {
+    where.AND.push({
       OR: [
-        {
-          subscriptions: {
-            some: {
-              status: 'active',
-              endDate: {
-                gte: new Date(),
-              },
-            },
-          },
-        },
-        {
-          owner: {
-            is: {
-              subscriptionEndsAt: {
-                gte: new Date(),
-              },
-            },
-          },
-        },
+        { name: { contains: query, mode: 'insensitive' } },
+        { city: { contains: query, mode: 'insensitive' } },
+        { address: { contains: query, mode: 'insensitive' } },
       ],
+    });
+  }
 
-      // Only CNG stations
-      AND: [
-        {
-          OR: [
-            { fuelTypes: { contains: 'CNG' } },
-            { fuelTypes: { contains: 'cng' } },
-          ],
-        },
-      ],
-    },
+  return where;
+}
+
+async function getApprovedStations(query: string, lat?: number, lng?: number) {
+  // SECURITY FIX: limit pagination to prevent resource exhaustion
+  return prisma.station.findMany({
+    where: buildApprovedStationWhere(query, lat, lng),
     include: {
       owner: {
         select: {
@@ -103,6 +135,8 @@ async function getApprovedStations() {
         },
       },
     },
+    take: 50,
+    orderBy: { updatedAt: 'desc' },
   });
 }
 
@@ -147,10 +181,19 @@ export async function POST(request: NextRequest) {
       // For voice query, we extract token manually from header if needed, but here we assume standard Bearer auth
       const payload = await requireAuth(request);
       userId = payload.userId;
+
+      const rateLimitResponse = rateLimit(request, rateLimitConfigs.expensive, {
+        headers: corsHeaders,
+        identifier: `voice:${payload.userId}`,
+        errorMessage: 'Please wait before sending another voice request.',
+      });
+      if (rateLimitResponse) {
+        return rateLimitResponse;
+      }
     } catch (e) {
       return NextResponse.json(
         { success: false, error: 'Unauthorized: You must be logged in to use voice features.' },
-        { status: 401 }
+        { status: 401, headers: corsHeaders }
       );
     }
 
@@ -167,31 +210,32 @@ export async function POST(request: NextRequest) {
             expiryDate: subStatus.expiryDate,
           }
         },
-        { status: 403 }
+        { status: 403, headers: corsHeaders }
       );
     }
 
     const body: VoiceQueryRequest = await request.json();
+    const sanitizedQuery = sanitizeVoiceQuery(body.query || '');
 
-    if (!body.query) {
+    if (!sanitizedQuery) {
       return NextResponse.json(
         { success: false, error: 'Query is required' },
-        { status: 400 }
+        { status: 400, headers: corsHeaders }
       );
     }
 
-    const intent = parseIntent(body.query);
+    const intent = parseIntent(sanitizedQuery);
     let response = '';
     let stations: StationWithDistance[] = [];
     let nearestStation: StationWithDistance | null = null;
 
-    const allStations = await getApprovedStations();
+    const approvedStations = await getApprovedStations(sanitizedQuery, body.lat, body.lng);
 
     switch (intent) {
       case 'nearby_search':
         if (body.lat && body.lng) {
-          // Filter stations within 10km radius
-          stations = (allStations
+          // SECURITY FIX: limit nearby station lookup to a bounded area instead of loading everything.
+          stations = (approvedStations
             .map((station) => ({
               ...station,
               distance: calculateDistance(
@@ -214,15 +258,15 @@ export async function POST(request: NextRequest) {
             response = 'Sorry, no CNG stations found within 10 kilometers of your location.';
           }
         } else {
-          stations = allStations.slice(0, 10) as StationWithDistance[];
-          response = `Found ${allStations.length} CNG stations. Showing first ${stations.length}.`;
+          stations = approvedStations.slice(0, 10) as StationWithDistance[];
+          response = `Found ${approvedStations.length} CNG stations. Showing first ${stations.length}.`;
         }
         break;
 
       case 'navigation':
         if (body.lat && body.lng) {
-          // Find nearest station
-          const navStations: StationWithDistance[] = allStations.map((station) => ({
+          // SECURITY FIX: use the bounded station list for navigation lookup.
+          const navStations: StationWithDistance[] = approvedStations.map((station) => ({
             ...station,
             distance: calculateDistance(
               body.lat!,
@@ -248,7 +292,7 @@ export async function POST(request: NextRequest) {
 
       case 'availability':
         if (body.lat && body.lng) {
-          const nearbyStations = allStations.filter((station) => {
+          const nearbyStations = approvedStations.filter((station) => {
             const distance = calculateDistance(
               body.lat!,
               body.lng!,
@@ -277,7 +321,7 @@ export async function POST(request: NextRequest) {
       case 'pricing':
       case 'cheapest':
         // In production, this would check actual pricing data
-        stations = allStations.slice(0, 5) as StationWithDistance[];
+        stations = approvedStations.slice(0, 5) as StationWithDistance[];
         response = intent === 'cheapest'
           ? 'Showing stations with the best CNG prices in your area.'
           : 'CNG pricing varies by location. Showing nearby stations for comparison.';
@@ -286,16 +330,16 @@ export async function POST(request: NextRequest) {
       case 'general_search':
       default:
         // Search by name or location
-        stations = allStations.filter((station) =>
-          station.name.toLowerCase().includes(body.query.toLowerCase()) ||
-          station.address.toLowerCase().includes(body.query.toLowerCase()) ||
-          station.city.toLowerCase().includes(body.query.toLowerCase())
+        stations = approvedStations.filter((station) =>
+          station.name.toLowerCase().includes(sanitizedQuery.toLowerCase()) ||
+          station.address.toLowerCase().includes(sanitizedQuery.toLowerCase()) ||
+          station.city.toLowerCase().includes(sanitizedQuery.toLowerCase())
         ).slice(0, 10) as StationWithDistance[];
 
         if (stations.length > 0) {
-          response = `Found ${stations.length} station${stations.length > 1 ? 's' : ''} matching "${body.query}".`;
+          response = `Found ${stations.length} station${stations.length > 1 ? 's' : ''} matching your request.`;
         } else {
-          response = `Sorry, no stations found matching "${body.query}".`;
+          response = 'Sorry, no stations found matching your request.';
         }
         break;
     }
@@ -306,12 +350,11 @@ export async function POST(request: NextRequest) {
       response,
       stations,
       nearestStation,
-    });
-  } catch (error) {
-    console.error('Voice query processing error:', error);
+    }, { headers: corsHeaders });
+  } catch (_error) {
     return NextResponse.json(
       { success: false, error: 'Failed to process voice query' },
-      { status: 500 }
+      { status: 500, headers: corsHeaders }
     );
   }
 }

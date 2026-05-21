@@ -2,12 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import Razorpay from 'razorpay';
 import { corsHeaders } from '@/lib/api-utils';
 import { requireAuth } from '@/lib/auth';
+import { RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET } from '@/lib/env';
 import { getPlanConfig } from '@/lib/subscription';
 
-const razorpay = new Razorpay({
-    key_id: process.env.RAZORPAY_KEY_ID || 'rzp_test_1234567890',
-    key_secret: process.env.RAZORPAY_KEY_SECRET || 'your_razorpay_secret_key',
-});
+const razorpay = (RAZORPAY_KEY_ID && RAZORPAY_KEY_SECRET)
+    ? new Razorpay({
+        key_id: RAZORPAY_KEY_ID,
+        key_secret: RAZORPAY_KEY_SECRET,
+    })
+    : null;
 
 export async function OPTIONS() {
     return NextResponse.json({}, { headers: corsHeaders });
@@ -72,6 +75,10 @@ export async function POST(request: NextRequest) {
             }
         };
 
+        if (!razorpay) {
+            throw new Error('Razorpay credentials not configured');
+        }
+
         const order = await razorpay.orders.create(options);
 
         if (!order) {
@@ -87,7 +94,7 @@ export async function POST(request: NextRequest) {
                 orderId: order.id,
                 amount: order.amount,
                 currency: order.currency,
-                keyId: process.env.RAZORPAY_KEY_ID,
+                keyId: RAZORPAY_KEY_ID,
                 plan: {
                     id: plan.id,
                     name: plan.name,
@@ -98,8 +105,7 @@ export async function POST(request: NextRequest) {
             { status: 200, headers: corsHeaders }
         );
 
-    } catch (error) {
-        console.error('Create order error:', error);
+    } catch (_error) {
         return NextResponse.json(
             { error: 'Internal server error' },
             { status: 500, headers: corsHeaders }
