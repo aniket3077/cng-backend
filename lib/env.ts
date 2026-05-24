@@ -25,7 +25,6 @@ interface EnvConfig {
 
 const requiredEnvVars = [
   'JWT_SECRET',
-  'JWT_REFRESH_SECRET',
   'DATABASE_URL',
   'RAZORPAY_KEY_ID',
   'RAZORPAY_KEY_SECRET',
@@ -72,7 +71,7 @@ function validateEnv(): EnvConfig {
 
   return {
     JWT_SECRET: jwtSecret,
-    JWT_REFRESH_SECRET: sanitizeEnvValue(process.env.JWT_REFRESH_SECRET),
+    JWT_REFRESH_SECRET: sanitizeEnvValue(process.env.JWT_REFRESH_SECRET) || jwtSecret,
     DATABASE_URL: sanitizeEnvValue(process.env.DATABASE_URL),
     ALLOWED_ORIGINS: parseAllowedOrigins(process.env.ALLOWED_ORIGINS),
     RAZORPAY_KEY_ID: sanitizeEnvValue(process.env.RAZORPAY_KEY_ID),

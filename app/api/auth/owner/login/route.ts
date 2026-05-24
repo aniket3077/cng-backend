@@ -86,15 +86,19 @@ export async function POST(request: NextRequest) {
       data: { lastLoginAt: new Date() },
     });
 
-    await prisma.activityLog.create({
-      data: {
-        ownerId: owner.id,
-        action: 'login',
-        description: 'Station owner logged in',
-        ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
-        userAgent: request.headers.get('user-agent') || 'unknown',
-      },
-    });
+    try {
+      await prisma.activityLog.create({
+        data: {
+          ownerId: owner.id,
+          action: 'login',
+          description: 'Station owner logged in',
+          ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
+          userAgent: request.headers.get('user-agent') || 'unknown',
+        },
+      });
+    } catch (activityLogError) {
+      console.warn('Failed to write owner login activity log:', activityLogError);
+    }
 
     const response = NextResponse.json(
       {
