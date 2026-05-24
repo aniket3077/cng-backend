@@ -3,7 +3,7 @@ import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import { prisma, isPrismaUnavailableError } from '@/lib/prisma';
 import { signJwt } from '@/lib/auth';
-import { corsHeaders } from '@/lib/api-utils';
+import { getCorsHeaders } from '@/lib/api-utils';
 import { rateLimit, rateLimitConfigs } from '@/lib/rate-limit';
 import { clearFailedLogin, isLoginLocked, registerFailedLogin } from '@/lib/login-lockout';
 
@@ -12,11 +12,13 @@ const loginSchema = z.object({
   password: z.string().min(6).max(100),
 });
 
-export async function OPTIONS() {
-  return NextResponse.json({}, { headers: corsHeaders });
+export async function OPTIONS(request: NextRequest) {
+  return NextResponse.json({}, { headers: getCorsHeaders(request.headers.get('origin')) });
 }
 
 export async function POST(request: NextRequest) {
+  const corsHeaders = getCorsHeaders(request.headers.get('origin'));
+
   const rateLimitResponse = rateLimit(request, rateLimitConfigs.auth, { headers: corsHeaders });
   if (rateLimitResponse) {
     return rateLimitResponse;
@@ -122,7 +124,7 @@ export async function POST(request: NextRequest) {
       value: token,
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      sameSite: 'none',
       maxAge: 2 * 24 * 60 * 60, // 2 days
       path: '/',
     });

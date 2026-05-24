@@ -8,7 +8,7 @@ import {
   isPrismaUnavailableError,
 } from '@/lib/prisma';
 import { signJwt, signRefreshToken } from '@/lib/auth';
-import { corsHeaders } from '@/lib/api-utils';
+import { getCorsHeaders } from '@/lib/api-utils';
 import { rateLimiters } from '@/lib/rate-limiter';
 import { securityLogger } from '@/lib/security-logger';
 import { clearFailedLogin, isLoginLocked, registerFailedLogin } from '@/lib/login-lockout';
@@ -18,11 +18,13 @@ const loginSchema = z.object({
   password: z.string().min(6).max(100),
 });
 
-export async function OPTIONS() {
-  return NextResponse.json({}, { headers: corsHeaders });
+export async function OPTIONS(request: NextRequest) {
+  return NextResponse.json({}, { headers: getCorsHeaders(request.headers.get('origin')) });
 }
 
 export async function POST(request: NextRequest) {
+  const corsHeaders = getCorsHeaders(request.headers.get('origin'));
+
   return rateLimiters.auth(async (req: NextRequest) => {
     if (!isPrismaInitialized()) {
       const pe = getPrismaInitError();
@@ -106,7 +108,7 @@ export async function POST(request: NextRequest) {
         value: token,
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
+        sameSite: 'none',
         maxAge: 2 * 24 * 60 * 60, // 2 days
         path: '/',
       });
