@@ -43,9 +43,9 @@ export function parseAllowedOrigins(rawOrigins = process.env.ALLOWED_ORIGINS): s
       return ['http://localhost:5173', 'http://localhost:3000'];
     }
 
-    // SECURITY FIX: never default to wildcard in production
-    console.error('Critical: ALLOWED_ORIGINS is not configured in production. Cross-origin requests will be blocked.');
-    return [];
+    // Robust Fallback: Default to known production domains if config is missing in production to prevent breaking CORS
+    console.warn('Warning: ALLOWED_ORIGINS is not configured in production. Falling back to default production domains.');
+    return ['https://cngbharat.com', 'https://www.cngbharat.com', 'https://cngmain.netlify.app'];
   }
 
   const normalizedOrigins = sanitizedOrigins
@@ -53,10 +53,11 @@ export function parseAllowedOrigins(rawOrigins = process.env.ALLOWED_ORIGINS): s
     .map((origin) => normalizeOrigin(origin))
     .filter(Boolean) as string[];
 
-  // SECURITY FIX: wildcard CORS is never permitted in production
+  // SECURITY/FUNCTIONAL FIX: Wildcard CORS (*) is not allowed in production with credentials (cookies) enabled.
+  // Instead of blocking all origins, we fall back to the safe, known production domains.
   if (process.env.NODE_ENV === 'production' && normalizedOrigins.includes('*')) {
-    console.error('Critical: Wildcard CORS (*) is not allowed in production. Blocking all origins.');
-    return [];
+    console.warn('Warning: Wildcard CORS (*) is not allowed in production with credentials enabled. Falling back to default production domains.');
+    return ['https://cngbharat.com', 'https://www.cngbharat.com', 'https://cngmain.netlify.app'];
   }
 
   return [...new Set(normalizedOrigins)];
