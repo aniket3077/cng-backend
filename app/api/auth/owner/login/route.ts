@@ -96,8 +96,7 @@ export async function POST(request: NextRequest) {
           userAgent: request.headers.get('user-agent') || 'unknown',
         },
       });
-    } catch (activityLogError) {
-      console.warn('Failed to write owner login activity log:', activityLogError);
+    } catch {
     }
 
     const response = NextResponse.json(

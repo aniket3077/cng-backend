@@ -70,7 +70,7 @@ const DEFAULT_ALLOWED_ORIGIN = ALLOW_ALL_ORIGINS ? '*' : ALLOWED_ORIGINS[0] || '
 export const CORS_BASE_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-  'Access-Control-Allow-Credentials': 'false',
+  'Access-Control-Allow-Credentials': 'true',
   'Access-Control-Max-Age': '86400',
 };
 

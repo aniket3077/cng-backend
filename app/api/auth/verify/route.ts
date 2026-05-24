@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { corsHeaders } from '@/lib/api-utils';
+import { getCorsHeaders } from '@/lib/api-utils';
 import { requireAuth } from '@/lib/auth';
 
+export async function OPTIONS(request: NextRequest) {
+  return NextResponse.json({}, { headers: getCorsHeaders(request.headers.get('origin')) });
+}
+
 export async function GET(request: NextRequest) {
+  const corsHeaders = getCorsHeaders(request.headers.get('origin'));
+
   try {
     const payload = await requireAuth(request);
     return NextResponse.json(
