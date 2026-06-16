@@ -40,12 +40,12 @@ const updateStationSchema = z.object({
   rejectionReason: z.string().optional(),
 });
 
-// GET - Get single station details
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const adminId = await verifyAdminToken(request);
     if (!adminId) {
       return NextResponse.json(
@@ -55,7 +55,7 @@ export async function GET(
     }
 
     const station = await prisma.station.findUnique({
-      where: { id: params.id },
+      where: { id },
       include: {
         owner: {
           select: {
@@ -86,12 +86,12 @@ export async function GET(
   }
 }
 
-// PUT - Update station
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const adminId = await verifyAdminToken(request);
     if (!adminId) {
       return NextResponse.json(
@@ -112,7 +112,7 @@ export async function PUT(
 
     // Check if station exists
     const existingStation = await prisma.station.findUnique({
-      where: { id: params.id },
+      where: { id },
     });
 
     if (!existingStation) {
@@ -125,7 +125,7 @@ export async function PUT(
     const { rejectionReason, ...updateData } = validation.data;
 
     const updatedStation = await prisma.station.update({
-      where: { id: params.id },
+      where: { id },
       data: updateData,
     });
 
@@ -133,7 +133,7 @@ export async function PUT(
     await prisma.activityLog.create({
       data: {
         adminId,
-        stationId: params.id,
+        stationId: id,
         action: 'station_updated',
         description: `Station "${updatedStation.name}" updated by admin`,
         metadata: JSON.stringify({ changes: Object.keys(updateData) }),
@@ -173,12 +173,12 @@ export async function PUT(
   }
 }
 
-// DELETE - Delete station
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const adminId = await verifyAdminToken(request);
     if (!adminId) {
       return NextResponse.json(
@@ -189,7 +189,7 @@ export async function DELETE(
 
     // Check if station exists
     const station = await prisma.station.findUnique({
-      where: { id: params.id },
+      where: { id },
     });
 
     if (!station) {
@@ -201,7 +201,7 @@ export async function DELETE(
 
     // Delete station
     await prisma.station.delete({
-      where: { id: params.id },
+      where: { id },
     });
 
     // Log activity

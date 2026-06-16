@@ -128,32 +128,51 @@ npm run dev
 
 Server runs on http://localhost:5000
 
-## Deployment
+## Deployment to AWS EC2
 
-See [VERCEL_DEPLOYMENT.md](./VERCEL_DEPLOYMENT.md) for complete deployment guide.
+This backend is configured for deployment on an AWS EC2 instance (Ubuntu) using **PM2** as the process manager.
 
-### Quick Deploy to Vercel
+### Steps to Deploy:
 
-1. **Set Environment Variables** in Vercel Dashboard:
-   - `DATABASE_URL` - PostgreSQL pooled connection for serverless (`6543`, `pgbouncer=true`, `connection_limit=1`)
-   - `DIRECT_URL` - PostgreSQL connection (direct)
-   - `JWT_SECRET` - Strong random secret (32+ chars)
-   - `ALLOWED_ORIGINS` - Your frontend URLs
-   - `NODE_ENV` - `production`
-   - Node.js runtime - `20.x`
-
-2. **Deploy**:
+1. **Connect to your EC2 Instance**:
    ```bash
-   git push origin main
+   ssh -i your-key.pem ubuntu@your-ec2-ip
    ```
 
-3. **Run migrations** (after first deploy):
+2. **Install Node.js & PM2**:
    ```bash
-   vercel env pull
-   DATABASE_URL="your-url" npx prisma db push
-   DATABASE_URL="your-url" npx tsx scripts/create-admin.ts
-   DATABASE_URL="your-url" npx tsx scripts/enable-rls.ts
+   curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt install -y nodejs && sudo npm install -g pm2
    ```
+
+3. **Clone the repository & Install dependencies**:
+   ```bash
+   git clone <YOUR_GIT_REPO_URL> cng-backend
+   cd cng-backend
+   npm install
+   ```
+
+4. **Configure Environment Variables**:
+   Create a `.env` file in the root directory:
+   ```bash
+   nano .env
+   ```
+   Add your database credentials and configurations:
+   ```env
+   DATABASE_URL="postgresql://cngbharat2025:99228761@cngbharat.covye08wayvz.us-east-1.rds.amazonaws.com:5432/postgres?sslmode=require"
+   DIRECT_URL="postgresql://cngbharat2025:99228761@cngbharat.covye08wayvz.us-east-1.rds.amazonaws.com:5432/postgres?sslmode=require"
+   JWT_SECRET="your-strong-secret"
+   NODE_ENV="production"
+   PORT=5000
+   ```
+
+5. **Build and Run with PM2**:
+   ```bash
+   npm run build
+   pm2 start ecosystem.config.js --env production
+   ```
+
+6. **Open Port 5000 in Security Group**:
+   Make sure to allow inbound TCP traffic on port `5000` from your frontend client origin in the AWS Security Group for your EC2 instance.
 
 ## Scripts
 

@@ -2,7 +2,7 @@
 module.exports = {
   apps: [
     {
-      name: 'petrolink-backend',
+      name: 'cngbharat-backend',
       script: 'node_modules/next/dist/bin/next',
       args: 'start -p 5000',
       cwd: '/home/ubuntu/cng-backend',
@@ -19,9 +19,9 @@ module.exports = {
         NODE_ENV: 'production',
         PORT: 5000,
       },
-      error_file: '/home/ubuntu/.pm2/logs/petrolink-error.log',
-      out_file: '/home/ubuntu/.pm2/logs/petrolink-out.log',
-      log_file: '/home/ubuntu/.pm2/logs/petrolink-combined.log',
+      error_file: '/home/ubuntu/.pm2/logs/cngbharat-error.log',
+      out_file: '/home/ubuntu/.pm2/logs/cngbharat-out.log',
+      log_file: '/home/ubuntu/.pm2/logs/cngbharat-combined.log',
       time: true,
       merge_logs: true,
       log_date_format: 'YYYY-MM-DD HH:mm:ss Z',

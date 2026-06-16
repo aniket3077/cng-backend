@@ -18,7 +18,7 @@ class SecurityLogger {
   private maxLogs = 1000; // Keep last 1000 logs in memory
 
   private getClientIP(request: NextRequest): string {
-    return request.ip || 
+    return (request as any).ip || 
            request.headers.get('x-forwarded-for')?.split(',')[0] || 
            request.headers.get('x-real-ip') || 
            'unknown';

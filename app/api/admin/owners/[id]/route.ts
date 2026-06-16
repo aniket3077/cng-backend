@@ -35,12 +35,12 @@ const updateOwnerSchema = z.object({
   subscriptionEndsAt: z.string().optional().nullable(),
 });
 
-// GET - Get single owner details
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const adminId = await verifyAdminToken(request);
     if (!adminId) {
       return NextResponse.json(
@@ -50,7 +50,7 @@ export async function GET(
     }
 
     const owner = await prisma.stationOwner.findUnique({
-      where: { id: params.id },
+      where: { id },
       include: {
         stations: true,
         _count: {
@@ -82,12 +82,12 @@ export async function GET(
   }
 }
 
-// PUT - Update owner
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const adminId = await verifyAdminToken(request);
     if (!adminId) {
       return NextResponse.json(
@@ -108,7 +108,7 @@ export async function PUT(
 
     // Check if owner exists
     const existingOwner = await prisma.stationOwner.findUnique({
-      where: { id: params.id },
+      where: { id },
     });
 
     if (!existingOwner) {
@@ -126,7 +126,7 @@ export async function PUT(
     }
 
     const updatedOwner = await prisma.stationOwner.update({
-      where: { id: params.id },
+      where: { id },
       data: updateData,
     });
 
@@ -134,7 +134,7 @@ export async function PUT(
     await prisma.activityLog.create({
       data: {
         adminId,
-        ownerId: params.id,
+        ownerId: id,
         action: 'owner_updated',
         description: `Owner "${updatedOwner.name}" updated by admin`,
         metadata: JSON.stringify({ changes: Object.keys(validation.data) }),
@@ -153,7 +153,7 @@ export async function PUT(
       if (notification) {
         await prisma.notification.create({
           data: {
-            ownerId: params.id,
+            ownerId: id,
             title: notification.title,
             message: notification.message,
             type: notification.type,
@@ -177,7 +177,7 @@ export async function PUT(
       if (notification) {
         await prisma.notification.create({
           data: {
-            ownerId: params.id,
+            ownerId: id,
             title: notification.title,
             message: notification.message,
             type: notification.type,
@@ -191,7 +191,7 @@ export async function PUT(
       if (validation.data.subscriptionType) {
         await prisma.notification.create({
           data: {
-            ownerId: params.id,
+            ownerId: id,
             title: 'Subscription Approved',
             message: `Your ${validation.data.subscriptionType} subscription request has been approved.`,
             type: 'success',
@@ -201,7 +201,7 @@ export async function PUT(
       } else {
         await prisma.notification.create({
           data: {
-            ownerId: params.id,
+            ownerId: id,
             title: existingOwner.subscriptionEndsAt ? 'Subscription Deactivated' : 'Subscription Request Rejected',
             message: existingOwner.subscriptionEndsAt
               ? 'Your subscription has been deactivated by admin.'
@@ -228,12 +228,12 @@ export async function PUT(
   }
 }
 
-// DELETE - Delete owner
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const adminId = await verifyAdminToken(request);
     if (!adminId) {
       return NextResponse.json(
@@ -244,7 +244,7 @@ export async function DELETE(
 
     // Check if owner exists
     const owner = await prisma.stationOwner.findUnique({
-      where: { id: params.id },
+      where: { id },
     });
 
     if (!owner) {
@@ -256,7 +256,7 @@ export async function DELETE(
 
     // Delete owner (cascade will handle related records)
     await prisma.stationOwner.delete({
-      where: { id: params.id },
+      where: { id },
     });
 
     // Log activity

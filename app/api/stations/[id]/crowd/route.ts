@@ -12,12 +12,12 @@ export async function OPTIONS() {
   return NextResponse.json({}, { headers: corsHeaders });
 }
 
-// POST /api/stations/[id]/crowd — user reports current crowd level
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const payload = await requireAuth(request);
 
     if (payload.role !== 'customer') {
@@ -35,7 +35,7 @@ export async function POST(
     }
 
     const station = await prisma.station.findUnique({
-      where: { id: params.id },
+      where: { id },
       select: { id: true, crowdCount: true },
     });
 
@@ -53,7 +53,7 @@ export async function POST(
     };
 
     const updated = await prisma.station.update({
-      where: { id: params.id },
+      where: { id },
       data: {
         crowdLevel,
         crowdCount: { increment: 1 },

@@ -18,12 +18,12 @@ export async function OPTIONS() {
   return NextResponse.json({}, { headers: corsHeaders });
 }
 
-// PUT /api/customer/vehicles/[id] — update plate
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const payload = await requireAuth(request);
 
     if (payload.role !== 'customer') {
@@ -31,7 +31,7 @@ export async function PUT(
     }
 
     const vehicle = await prisma.vehicle.findFirst({
-      where: { id: params.id, userId: payload.userId },
+      where: { id, userId: payload.userId },
     });
 
     if (!vehicle) {
@@ -53,7 +53,7 @@ export async function PUT(
       where: {
         userId: payload.userId,
         plate: validation.data.plate,
-        NOT: { id: params.id },
+        NOT: { id },
       },
     });
 
@@ -65,7 +65,7 @@ export async function PUT(
     }
 
     const updated = await prisma.vehicle.update({
-      where: { id: params.id },
+      where: { id },
       data: { plate: validation.data.plate },
       select: { id: true, plate: true, createdAt: true },
     });
@@ -81,12 +81,12 @@ export async function PUT(
   }
 }
 
-// DELETE /api/customer/vehicles/[id] — remove a vehicle
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const payload = await requireAuth(request);
 
     if (payload.role !== 'customer') {
@@ -94,14 +94,14 @@ export async function DELETE(
     }
 
     const vehicle = await prisma.vehicle.findFirst({
-      where: { id: params.id, userId: payload.userId },
+      where: { id, userId: payload.userId },
     });
 
     if (!vehicle) {
       return NextResponse.json({ error: 'Vehicle not found' }, { status: 404, headers: corsHeaders });
     }
 
-    await prisma.vehicle.delete({ where: { id: params.id } });
+    await prisma.vehicle.delete({ where: { id } });
 
     return NextResponse.json({ message: 'Vehicle removed' }, { status: 200, headers: corsHeaders });
   } catch (error) {
