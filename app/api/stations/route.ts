@@ -78,43 +78,47 @@ export async function GET(request: NextRequest) {
       };
     }
 
-    const stations = await prisma.station.findMany({
-      where,
-      orderBy: [
-        { isPartner: 'desc' }, // Partners first
-        { createdAt: 'desc' }, // Then by creation date
-      ],
-      skip,
-      take: limit,
-      select: {
-        id: true,
-        name: true,
-        address: true,
-        city: true,
-        state: true,
-        postalCode: true,
-        lat: true,
-        lng: true,
-        fuelTypes: true,
-        isPartner: true,
-        phone: true,
-        openingHours: true,
-        cngAvailable: true,
-        cngQuantityKg: true,
-        crowdLevel: true,
-        crowdCount: true,
-        estimatedWaitTime: true,
-        crowdUpdatedAt: true,
-        owner: {
-          select: {
-            name: true,
-            companyName: true,
-            phone: true,
-            email: true,
+    // PERFORMANCE FIX (P3): run findMany and count in parallel
+    const [stations, total] = await Promise.all([
+      prisma.station.findMany({
+        where,
+        orderBy: [
+          { isPartner: 'desc' }, // Partners first
+          { createdAt: 'desc' }, // Then by creation date
+        ],
+        skip,
+        take: limit,
+        select: {
+          id: true,
+          name: true,
+          address: true,
+          city: true,
+          state: true,
+          postalCode: true,
+          lat: true,
+          lng: true,
+          fuelTypes: true,
+          isPartner: true,
+          phone: true,
+          openingHours: true,
+          cngAvailable: true,
+          cngQuantityKg: true,
+          crowdLevel: true,
+          crowdCount: true,
+          estimatedWaitTime: true,
+          crowdUpdatedAt: true,
+          owner: {
+            select: {
+              name: true,
+              companyName: true,
+              phone: true,
+              email: true,
+            },
           },
         },
-      },
-    });
+      }),
+      prisma.station.count({ where }),
+    ]);
 
     // Calculate distance if lat/lng provided
     let stationsWithDistance = stations;
@@ -132,9 +136,6 @@ export async function GET(request: NextRequest) {
         return { ...station, distance };
       }).sort((a, b) => a.distance - b.distance); // Sort by distance
     }
-
-    // Get total count for pagination
-    const total = await prisma.station.count({ where });
 
     return NextResponse.json({
       success: true,

@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Rate limit OTP requests
-    const rateLimitResponse = rateLimit(request, rateLimitConfigs.auth, {
+    const rateLimitResponse = await rateLimit(request, rateLimitConfigs.auth, {
       headers: corsHeaders,
       identifier: `otp:${payload.userId}`,
       errorMessage: 'Too many OTP requests. Please wait before requesting another.',

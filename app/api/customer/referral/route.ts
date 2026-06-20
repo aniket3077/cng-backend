@@ -235,7 +235,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const rateLimitResponse = rateLimit(request, rateLimitConfigs.expensive, {
+    const rateLimitResponse = await rateLimit(request, rateLimitConfigs.expensive, {
       headers: corsHeaders,
       identifier: `referral:${payload.userId}`,
       errorMessage: 'Please wait before trying another referral code.',
@@ -333,18 +333,18 @@ export async function POST(request: NextRequest) {
     ] = await Promise.all([
       fingerprint
         ? prisma.user.findFirst({
-            where: {
-              lastKnownDeviceFingerprint: fingerprint,
-              id: { notIn: [payload.userId, referrer.id] },
-            },
-            select: { id: true },
-          })
+          where: {
+            lastKnownDeviceFingerprint: fingerprint,
+            id: { notIn: [payload.userId, referrer.id] },
+          },
+          select: { id: true },
+        })
         : Promise.resolve(null),
       fingerprint
         ? prisma.referral.findFirst({
-            where: { deviceFingerprint: fingerprint },
-            select: { id: true },
-          })
+          where: { deviceFingerprint: fingerprint },
+          select: { id: true },
+        })
         : Promise.resolve(null),
       prisma.referral.count({
         where: {
@@ -354,11 +354,11 @@ export async function POST(request: NextRequest) {
       }),
       fingerprint
         ? prisma.referral.count({
-            where: {
-              deviceFingerprint: fingerprint,
-              createdAt: { gte: velocityWindowStart },
-            },
-          })
+          where: {
+            deviceFingerprint: fingerprint,
+            createdAt: { gte: velocityWindowStart },
+          },
+        })
         : Promise.resolve(0),
     ]);
 

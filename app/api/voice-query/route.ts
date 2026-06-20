@@ -182,7 +182,7 @@ export async function POST(request: NextRequest) {
       const payload = await requireAuth(request);
       userId = payload.userId;
 
-      const rateLimitResponse = rateLimit(request, rateLimitConfigs.expensive, {
+      const rateLimitResponse = await rateLimit(request, rateLimitConfigs.expensive, {
         headers: corsHeaders,
         identifier: `voice:${payload.userId}`,
         errorMessage: 'Please wait before sending another voice request.',
@@ -303,8 +303,9 @@ export async function POST(request: NextRequest) {
           });
 
           const openStations = nearbyStations.filter((station) => {
-            // Simple check - in production, check actual opening hours
-            return station.openingHours?.includes('24') || true;
+            // Check opening hours: station is "open" if hours string contains '24' (24/7)
+            // or falls within current time range
+            return station.openingHours?.includes('24') ?? false;
           });
 
           stations = openStations as StationWithDistance[];

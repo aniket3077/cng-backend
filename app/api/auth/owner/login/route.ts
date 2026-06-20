@@ -19,7 +19,7 @@ export async function OPTIONS(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const corsHeaders = getCorsHeaders(request.headers.get('origin'));
 
-  const rateLimitResponse = rateLimit(request, rateLimitConfigs.auth, { headers: corsHeaders });
+  const rateLimitResponse = await rateLimit(request, rateLimitConfigs.auth, { headers: corsHeaders });
   if (rateLimitResponse) {
     return rateLimitResponse;
   }
@@ -45,9 +45,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // SECURITY FIX (M6): use select to avoid leaking passwordHash in response
     const owner = await prisma.stationOwner.findUnique({
       where: { email: email.toLowerCase() },
-      include: {
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        phone: true,
+        companyName: true,
+        profileComplete: true,
+        onboardingStep: true,
+        passwordHash: true, // needed for bcrypt.compare below
         stations: {
           select: {
             id: true,
@@ -101,20 +110,14 @@ export async function POST(request: NextRequest) {
     } catch {
     }
 
+    // SECURITY FIX (M6): destructure passwordHash out so it never reaches the response
+    const { passwordHash: _ph, ...safeOwner } = owner;
+
     const response = NextResponse.json(
       {
         message: 'Login successful',
         token,
-        owner: {
-          id: owner.id,
-          name: owner.name,
-          email: owner.email,
-          phone: owner.phone,
-          companyName: owner.companyName,
-          profileComplete: owner.profileComplete,
-          onboardingStep: owner.onboardingStep,
-          stations: owner.stations,
-        },
+        owner: safeOwner,
       },
       { status: 200, headers: corsHeaders }
     );
@@ -123,9 +126,9 @@ export async function POST(request: NextRequest) {
       name: 'token',
       value: token,
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'none',
-      maxAge: 2 * 24 * 60 * 60, // 2 days
+      secure: true,
+      sameSite: 'strict',
+      maxAge: 60 * 60,
       path: '/',
     });
 

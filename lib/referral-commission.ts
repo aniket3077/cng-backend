@@ -177,7 +177,14 @@ export async function syncUserCommissionBalances(db: PrismaLike, userId: string)
     where: { userId },
     select: {
       amount: true,
-      remainingAmount: true,
+      status: true,
+    },
+  });
+
+  const withdrawals = await db.withdrawal.findMany({
+    where: { userId },
+    select: {
+      amount: true,
       status: true,
     },
   });
@@ -185,14 +192,30 @@ export async function syncUserCommissionBalances(db: PrismaLike, userId: string)
   const totalEarnings = roundCurrency(
     earnings.reduce((sum, earning) => sum + earning.amount, 0),
   );
-  const availableBalance = roundCurrency(
+
+  const availableEarningsSum = roundCurrency(
     earnings.reduce((sum, earning) => {
       if (earning.status !== 'available') {
         return sum;
       }
-
-      return sum + getEarningRemainingAmount(earning);
+      return sum + earning.amount;
     }, 0),
+  );
+
+  const pendingWithdrawalsSum = roundCurrency(
+    withdrawals
+      .filter((w) => w.status === 'pending' || w.status === 'processing')
+      .reduce((sum, w) => sum + w.amount, 0),
+  );
+
+  const paidWithdrawalsSum = roundCurrency(
+    withdrawals
+      .filter((w) => w.status === 'paid')
+      .reduce((sum, w) => sum + w.amount, 0),
+  );
+
+  const availableBalance = roundCurrency(
+    Math.max(0, availableEarningsSum - pendingWithdrawalsSum - paidWithdrawalsSum),
   );
 
   await db.user.update({
@@ -200,10 +223,11 @@ export async function syncUserCommissionBalances(db: PrismaLike, userId: string)
     data: {
       totalEarnings,
       availableBalance,
+      pendingWithdrawals: pendingWithdrawalsSum,
     },
   });
 
-  return { totalEarnings, availableBalance };
+  return { totalEarnings, availableBalance, pendingWithdrawals: pendingWithdrawalsSum };
 }
 
 export function buildMonthlyCommissionSeries(

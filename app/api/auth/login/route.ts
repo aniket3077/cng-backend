@@ -117,14 +117,14 @@ export async function POST(request: NextRequest) {
         { status: 200, headers: corsHeaders }
       );
 
-      // Set HttpOnly cookie for web clients
+      // Set HttpOnly cookie for web clients - SECURITY HARDENED
       response.cookies.set({
         name: 'token',
         value: token,
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-        maxAge: 2 * 24 * 60 * 60, // 2 days
+        secure: true, // ALWAYS use secure flag
+        sameSite: 'strict', // Strict CSRF protection
+        maxAge: 60 * 60, // 1 hour (matches token expiry)
         path: '/',
       });
 

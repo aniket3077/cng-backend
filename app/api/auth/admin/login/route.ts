@@ -107,9 +107,9 @@ export async function POST(request: NextRequest) {
         name: 'token',
         value: token,
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'none',
-        maxAge: 2 * 24 * 60 * 60, // 2 days
+        secure: true,
+        sameSite: 'strict',
+        maxAge: 60 * 60,
         path: '/',
       });
 
@@ -131,4 +131,3 @@ export async function POST(request: NextRequest) {
     }
   })(request);
 }
-

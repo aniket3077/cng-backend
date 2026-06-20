@@ -4,7 +4,7 @@ import { corsHeaders } from './api-utils';
 
 export function withRateLimit(config: RateLimitConfig, handler: Function) {
   return async (request: NextRequest, ...args: any[]) => {
-    const response = rateLimit(request, config, { headers: corsHeaders });
+    const response = await rateLimit(request, config, { headers: corsHeaders });
     if (response) {
       return response;
     }

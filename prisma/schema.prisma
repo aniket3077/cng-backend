@@ -23,6 +23,7 @@ model User {
   referredBy          String?
   totalEarnings       Float     @default(0)
   availableBalance    Float     @default(0)
+  pendingWithdrawals  Float     @default(0)
   lastKnownDeviceFingerprint String?
   referralJoinedAt    DateTime?
   referralFraudScore  Int       @default(0)
@@ -37,6 +38,7 @@ model User {
   payoutRequests      PayoutRequest[]
   savedPayoutMethods  SavedPayoutMethod[]
   payoutOtps          PayoutOtp[]
+  withdrawals         Withdrawal[]
   
   @@index([email])
   @@index([referralCode])
@@ -443,4 +445,30 @@ model PayoutOtp {
   @@index([userId])
   @@index([otp])
   @@index([verified])
+}
+
+model Withdrawal {
+  id              String    @id @default(cuid())
+  userId          String    @map("user_id")
+  amount          Float
+  paymentMethod   String    @map("payment_method") // upi, bank
+  upiId           String?   @map("upi_id")
+  bankName        String?   @map("bank_name")
+  accountNumber   String?   @map("account_number")
+  ifscCode        String?   @map("ifsc_code")
+  status          String    @default("pending") // pending, processing, paid, rejected
+  adminRemarks    String?   @map("admin_remarks")
+  requestedAt     DateTime  @default(now()) @map("requested_at")
+  approvedAt      DateTime? @map("approved_at")
+  paidAt          DateTime? @map("paid_at")
+  rejectedAt      DateTime? @map("rejected_at")
+  payoutDeadline  DateTime  @map("payout_deadline")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("withdrawals")
+  @@index([userId])
+  @@index([status])
 }

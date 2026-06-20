@@ -7,21 +7,17 @@ import { createIdempotencyReference, verifySignedRequest } from '@/lib/request-s
 import {
   MAX_WITHDRAWAL_AMOUNT,
   MIN_WITHDRAWAL_AMOUNT,
-  calculatePayoutFee,
-  getEarningRemainingAmount,
-  maskDestination,
-  parseJson,
   roundCurrency,
   syncUserCommissionBalances,
 } from '@/lib/referral-commission';
 import { rateLimit, rateLimitConfigs } from '@/lib/rate-limit';
 import { verifyPayoutOtp } from '@/lib/payout-otp';
+import { sendWithdrawalSubmittedEmail } from '@/lib/email';
 
 const payoutRequestSchema = z.object({
   amount: z.number().min(MIN_WITHDRAWAL_AMOUNT).max(MAX_WITHDRAWAL_AMOUNT),
   payoutMethod: z.enum(['bank_transfer', 'upi']),
   payoutMethodId: z.string().optional(),
-  instantPayout: z.boolean().optional().default(true),
   otpCode: z.string().length(6, 'OTP must be 6 digits'),
   accountDetails: z.object({
     accountNumber: z.string().optional(),
@@ -91,13 +87,19 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const [user, earnings, payoutRequests, savedPayoutMethods] = await Promise.all([
+    const [user, earnings, savedPayoutMethods] = await Promise.all([
       prisma.user.findUnique({
         where: { id: payload.userId },
         select: {
           id: true,
           referralFraudStatus: true,
           referralFraudScore: true,
+          availableBalance: true,
+          pendingWithdrawals: true,
+          totalEarnings: true,
+          withdrawals: {
+            orderBy: { requestedAt: 'desc' },
+          },
         },
       }),
       prisma.referralEarning.findMany({
@@ -115,10 +117,6 @@ export async function GET(request: NextRequest) {
         },
         orderBy: { earnedAt: 'desc' },
       }),
-      prisma.payoutRequest.findMany({
-        where: { userId: payload.userId },
-        orderBy: { createdAt: 'desc' },
-      }),
       prisma.savedPayoutMethod.findMany({
         where: { userId: payload.userId },
         orderBy: [{ isDefault: 'desc' }, { updatedAt: 'desc' }],
@@ -133,28 +131,25 @@ export async function GET(request: NextRequest) {
     }
 
     const balances = await syncUserCommissionBalances(prisma, payload.userId);
-    const pendingCommissions = roundCurrency(
-      earnings
-        .filter((earning) => earning.status === 'pending')
-        .reduce((sum, earning) => sum + earning.amount, 0),
-    );
+    const pendingCommissions = balances.pendingWithdrawals; // Set pendingCommissions = pendingWithdrawals for mobile backwards compatibility
     const totalWithdrawn = roundCurrency(
-      payoutRequests
-        .filter((payout) => payout.status === 'completed')
-        .reduce((sum, payout) => sum + payout.amount, 0),
+      user.withdrawals
+        .filter((w) => w.status === 'paid')
+        .reduce((sum, w) => sum + w.amount, 0),
     );
 
     return NextResponse.json(
       {
         wallet: {
           availableBalance: balances.availableBalance,
+          pendingWithdrawals: balances.pendingWithdrawals,
           totalCommissionEarned: balances.totalEarnings,
           pendingCommissions,
           totalWithdrawn,
           minimumWithdrawal: MIN_WITHDRAWAL_AMOUNT,
           maximumWithdrawal: MAX_WITHDRAWAL_AMOUNT,
-          instantPayoutFee: '1.5% capped at ₹25',
-          razorpayXIntegration: 'Queued through secure payout orchestration with webhook reconciliation',
+          instantPayoutFee: 'Free (Manual Processing)',
+          razorpayXIntegration: 'Manually reviewed and processed within 24 hours',
         },
         savedPayoutMethods: savedPayoutMethods.map((method) => ({
           id: method.id,
@@ -170,25 +165,33 @@ export async function GET(request: NextRequest) {
           lastUsedAt: method.lastUsedAt,
           verifiedAt: method.verifiedAt,
         })),
-        payoutHistory: payoutRequests.map((requestItem) => {
-          const accountDetails = parseJson<Record<string, string>>(requestItem.accountDetails, {});
-
+        payoutHistory: user.withdrawals.map((w) => {
+          const destination = w.paymentMethod === 'upi'
+            ? w.upiId || 'Unknown UPI'
+            : w.accountNumber ? `••••${w.accountNumber.slice(-4)}` : 'Bank Details';
+          
           return {
-            id: requestItem.id,
-            amount: requestItem.amount,
-            feeAmount: requestItem.feeAmount,
-            netAmount: requestItem.netAmount || requestItem.amount,
-            destination: maskDestination(accountDetails),
-            payoutMethod: requestItem.payoutMethod,
-            status: requestItem.status,
-            statusMessage: requestItem.statusMessage,
-            riskStatus: requestItem.riskStatus,
-            instantPayout: requestItem.instantPayout,
-            createdAt: requestItem.createdAt,
-            processedAt: requestItem.processedAt,
-            completedAt: requestItem.completedAt,
-            referenceId: requestItem.referenceId,
-            receiptLabel: `Receipt-${requestItem.referenceId || requestItem.id.slice(-6)}`,
+            id: w.id,
+            amount: w.amount,
+            feeAmount: 0,
+            netAmount: w.amount,
+            destination,
+            payoutMethod: w.paymentMethod,
+            status: w.status,
+            statusMessage: w.adminRemarks || (
+              w.status === 'pending' ? 'Pending admin review' :
+              w.status === 'processing' ? 'Approved & Processing' :
+              w.status === 'paid' ? 'Completed' : 'Rejected'
+            ),
+            riskStatus: 'clear',
+            instantPayout: false,
+            createdAt: w.createdAt,
+            processedAt: w.approvedAt,
+            completedAt: w.paidAt,
+            referenceId: w.id,
+            receiptLabel: `Receipt-${w.id.slice(-6)}`,
+            payoutDeadline: w.payoutDeadline,
+            adminRemarks: w.adminRemarks,
           };
         }),
         commissionLedger: earnings.map((earning) => ({
@@ -197,7 +200,7 @@ export async function GET(request: NextRequest) {
           planName: earning.referral.subscriptionPlan,
           sourceAmount: earning.sourceAmount || 0,
           amount: earning.amount,
-          remainingAmount: getEarningRemainingAmount(earning),
+          remainingAmount: earning.amount,
           status: earning.status,
           earnedAt: earning.earnedAt,
           description: earning.description,
@@ -211,7 +214,7 @@ export async function GET(request: NextRequest) {
       },
       { headers: corsHeaders },
     );
-    } catch (_error) {
+  } catch (_error) {
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500, headers: corsHeaders },
@@ -230,7 +233,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const rateLimitResponse = rateLimit(request, rateLimitConfigs.expensive, {
+    const rateLimitResponse = await rateLimit(request, rateLimitConfigs.expensive, {
       headers: corsHeaders,
       identifier: `payout:${payload.userId}`,
       errorMessage: 'Please wait before submitting another payout request.',
@@ -257,8 +260,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { amount, payoutMethod, payoutMethodId, accountDetails, instantPayout, otpCode } = validation.data;
-    // SECURITY FIX: require a verified one-time OTP before allowing the payout request.
+    const { amount, payoutMethod, payoutMethodId, accountDetails, otpCode } = validation.data;
+    
+    // REQUIRE OTP Verification
     const otpValid = await verifyPayoutOtp(payload.userId, otpCode);
     if (!otpValid) {
       return NextResponse.json(
@@ -268,49 +272,47 @@ export async function POST(request: NextRequest) {
     }
 
     const referenceId = createIdempotencyReference('PAYOUT', signedRequest.idempotencyKey);
-    const existingPayoutRequest = await prisma.payoutRequest.findFirst({
+    
+    // Prevent duplicate request by checking existing withdrawal with same referenceId / idempotency key
+    const existingWithdrawal = await prisma.withdrawal.findFirst({
       where: {
         userId: payload.userId,
-        referenceId,
+        id: referenceId, // We can use the reference ID as the transaction ID or search for it
       },
     });
 
-    if (existingPayoutRequest) {
+    if (existingWithdrawal) {
       return NextResponse.json(
         {
           message: 'Withdrawal request submitted successfully',
           payoutRequest: {
-            id: existingPayoutRequest.id,
-            amount: existingPayoutRequest.amount,
-            feeAmount: existingPayoutRequest.feeAmount,
-            netAmount: existingPayoutRequest.netAmount || existingPayoutRequest.amount,
-            status: existingPayoutRequest.status,
-            payoutMethod: existingPayoutRequest.payoutMethod,
-            createdAt: existingPayoutRequest.createdAt,
-            referenceId: existingPayoutRequest.referenceId,
-            statusMessage: existingPayoutRequest.statusMessage,
-            riskStatus: existingPayoutRequest.riskStatus,
+            id: existingWithdrawal.id,
+            amount: existingWithdrawal.amount,
+            feeAmount: 0,
+            netAmount: existingWithdrawal.amount,
+            status: existingWithdrawal.status,
+            payoutMethod: existingWithdrawal.paymentMethod,
+            createdAt: existingWithdrawal.createdAt,
+            referenceId: existingWithdrawal.id,
+            statusMessage: 'Withdrawal request submitted successfully',
+            riskStatus: 'clear',
           },
         },
         { headers: corsHeaders },
       );
     }
 
-    const [user, availableEarnings, savedMethod] = await Promise.all([
+    const [user, savedMethod] = await Promise.all([
       prisma.user.findUnique({
         where: { id: payload.userId },
         select: {
           id: true,
+          email: true,
+          name: true,
+          availableBalance: true,
           referralFraudStatus: true,
           referralFraudScore: true,
         },
-      }),
-      prisma.referralEarning.findMany({
-        where: {
-          userId: payload.userId,
-          status: 'available',
-        },
-        orderBy: { earnedAt: 'asc' },
       }),
       payoutMethodId
         ? prisma.savedPayoutMethod.findFirst({
@@ -329,11 +331,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const availableBalance = roundCurrency(
-      availableEarnings.reduce((sum, earning) => sum + getEarningRemainingAmount(earning), 0),
-    );
-
-    if (availableBalance < amount) {
+    if (user.availableBalance < amount) {
       return NextResponse.json(
         { error: 'Insufficient withdrawable balance' },
         { status: 400, headers: corsHeaders },
@@ -354,45 +352,35 @@ export async function POST(request: NextRequest) {
           upiId: accountDetails?.upiId?.toLowerCase(),
         };
 
-    const feeAmount = calculatePayoutFee(amount, instantPayout);
-    const netAmount = roundCurrency(amount - feeAmount);
-    const riskStatus =
-      user.referralFraudStatus === 'review' || amount >= 10000 ? 'review' : 'clear';
-    const payoutStatus = riskStatus === 'review'
-      ? 'pending'
-      : instantPayout
-        ? 'processing'
-        : 'pending';
-    const statusMessage = riskStatus === 'review'
-      ? 'Queued for admin review before release'
-      : instantPayout
-        ? 'Queued for secure instant payout processing'
-        : 'Queued for standard bank processing';
+    const deadline = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24-hour payout deadline
 
     const result = await prisma.$transaction(async (tx) => {
-      const payoutRequest = await tx.payoutRequest.create({
+      // Deduct from user's available balance and add to pending balance
+      await tx.user.update({
+        where: { id: payload.userId },
         data: {
-          userId: payload.userId,
-          amount,
-          payoutMethod,
-          accountDetails: JSON.stringify(resolvedAccountDetails),
-          feeAmount,
-          netAmount,
-          referenceId,
-          otpVerifiedAt: new Date(),
-          instantPayout,
-          riskStatus,
-          status: payoutStatus,
-          statusMessage,
-          providerPayload: JSON.stringify({
-            orchestration: {
-              idempotencyKey: signedRequest.idempotencyKey,
-              deviceFingerprint: signedRequest.deviceFingerprint,
-            },
-          }),
+          availableBalance: { decrement: amount },
+          pendingWithdrawals: { increment: amount },
         },
       });
 
+      // Create withdrawal request
+      const withdrawal = await tx.withdrawal.create({
+        data: {
+          id: referenceId, // Seed from idempotency reference ID to prevent duplicates
+          userId: payload.userId,
+          amount,
+          paymentMethod: payoutMethod,
+          upiId: resolvedAccountDetails.upiId || null,
+          bankName: payoutMethod === 'bank_transfer' ? (resolvedAccountDetails.ifsc ? 'Bank Account' : null) : null,
+          accountNumber: resolvedAccountDetails.accountNumber || null,
+          ifscCode: resolvedAccountDetails.ifsc || null,
+          status: 'pending',
+          payoutDeadline: deadline,
+        },
+      });
+
+      // Save payment method if not already saved
       if (!savedMethod) {
         const methodLabel = payoutMethod === 'upi'
           ? 'Primary UPI'
@@ -423,56 +411,48 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      let remainingToLock = amount;
-      for (const earning of availableEarnings) {
-        if (remainingToLock <= 0) {
-          break;
-        }
-
-        const availableFromEarning = getEarningRemainingAmount(earning);
-        const amountToLock = Math.min(availableFromEarning, remainingToLock);
-        const updatedRemainingAmount = roundCurrency(availableFromEarning - amountToLock);
-
-        await tx.referralEarning.update({
-          where: { id: earning.id },
-          data: {
-            payoutId: payoutRequest.id,
-            remainingAmount: updatedRemainingAmount,
-            status: updatedRemainingAmount === 0 ? 'paid' : 'available',
-            paidAt: updatedRemainingAmount === 0 ? new Date() : null,
-          },
-        });
-
-        remainingToLock = roundCurrency(remainingToLock - amountToLock);
-      }
-
       const balances = await syncUserCommissionBalances(tx, payload.userId);
-      return { payoutRequest, balances };
+      return { withdrawal, balances };
     });
+
+    // Send email notification for withdrawal submitted
+    try {
+      await sendWithdrawalSubmittedEmail(
+        user.email,
+        user.name || 'Customer',
+        amount,
+        payoutMethod,
+        result.withdrawal.payoutDeadline
+      );
+    } catch (err) {
+      console.error('Failed to send withdrawal submitted email:', err);
+    }
 
     return NextResponse.json(
       {
         message: 'Withdrawal request submitted successfully',
         payoutRequest: {
-          id: result.payoutRequest.id,
+          id: result.withdrawal.id,
           amount,
-          feeAmount,
-          netAmount,
-          status: result.payoutRequest.status,
+          feeAmount: 0,
+          netAmount: amount,
+          status: result.withdrawal.status,
           payoutMethod,
-          createdAt: result.payoutRequest.createdAt,
-          referenceId,
-          statusMessage,
-          riskStatus,
+          createdAt: result.withdrawal.createdAt,
+          referenceId: result.withdrawal.id,
+          statusMessage: 'Withdrawals are manually reviewed and processed within 24 hours.',
+          riskStatus: 'clear',
         },
         wallet: {
           availableBalance: result.balances.availableBalance,
+          pendingWithdrawals: result.balances.pendingWithdrawals,
           totalCommissionEarned: result.balances.totalEarnings,
         },
       },
       { headers: corsHeaders },
     );
-  } catch (_error) {
+  } catch (error) {
+    console.error('Failed to request payout:', error);
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500, headers: corsHeaders },

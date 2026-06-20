@@ -27,8 +27,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Blacklist the token
-    blacklistToken(token);
+    // Blacklist the token (await to ensure write lands before response)
+    await blacklistToken(token);
 
     return NextResponse.json(
       { success: true, message: 'Logged out successfully' },

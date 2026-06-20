@@ -19,8 +19,12 @@ const signupSchema = z.object({
   phone: z.string().trim().regex(/^\d{10,15}$/, 'Invalid phone number'),
   vehicleNo: z.string().trim().toUpperCase().regex(indianVehicleRegex, 'Invalid vehicle number'),
   password: z.string()
-    .min(8, 'Password must be at least 8 characters')
-    .max(100),
+    .min(12, 'Password must be at least 12 characters')
+    .max(128)
+    .regex(/[a-z]/, 'Password must contain at least one lowercase letter')
+    .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
+    .regex(/[0-9]/, 'Password must contain at least one number')
+    .regex(/[^a-zA-Z0-9]/, 'Password must contain at least one special character'),
   referralCode: z.string().optional(),
   deviceFingerprint: z.string().optional(),
   referralSource: z.string().optional(),
@@ -48,7 +52,7 @@ async function createUniqueReferralCode() {
 
 export async function POST(request: NextRequest) {
   try {
-    const rateLimitResponse = rateLimit(request, rateLimitConfigs.auth, {
+    const rateLimitResponse = await rateLimit(request, rateLimitConfigs.auth, {
       headers: corsHeaders,
       errorMessage: 'Too many signup attempts. Please try again later.',
     });

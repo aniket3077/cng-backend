@@ -11,23 +11,24 @@ export interface JWTPayload {
 
 /**
  * Sign a JWT token with user data
+ * SECURITY: Reduced to 1 hour for better security
  * @param payload - User data to encode
  * @returns JWT token string
  */
 export function signJwt(payload: JWTPayload): string {
   return jwt.sign(payload, JWT_SECRET, {
-    expiresIn: '2d', // Token valid for 2 days (reduced from 7d for security)
+    expiresIn: '1h', // Token valid for 1 hour (reduced from 2 days for security)
   });
 }
 
 /**
  * Sign a long-lived refresh token
  * @param payload - User data to encode
- * @returns Refresh token string (30-day expiry)
+ * @returns Refresh token string (7-day expiry)
  */
 export function signRefreshToken(payload: JWTPayload): string {
   return jwt.sign(payload, JWT_REFRESH_SECRET, {
-    expiresIn: '7d',
+    expiresIn: '7d', // Refresh token valid for 7 days
   });
 }
 

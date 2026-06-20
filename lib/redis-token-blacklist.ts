@@ -48,12 +48,7 @@ class RedisTokenBlacklist {
       });
 
       this.client.on('connect', () => {
-        console.log('Redis Client Connected');
         this.isConnected = true;
-      });
-
-      this.client.on('ready', () => {
-        console.log('Redis Client Ready');
       });
 
       await this.client.connect();
@@ -76,7 +71,6 @@ class RedisTokenBlacklist {
         const ttl = expiresAt ? Math.max(0, expiresAt - Math.floor(Date.now() / 1000)) : this.DEFAULT_TTL;
         
         await this.client.setEx(key, ttl, '1');
-        console.log(`Token blacklisted in Redis: ${token.substring(0, 10)}...`);
       } catch (error) {
         console.error('Failed to blacklist token in Redis:', error);
         // Fallback to memory blacklist
@@ -119,7 +113,6 @@ class RedisTokenBlacklist {
       try {
         const key = this.TOKEN_PREFIX + token;
         await this.client.del(key);
-        console.log(`Token removed from blacklist: ${token.substring(0, 10)}...`);
       } catch (error) {
         console.error('Failed to remove token from blacklist in Redis:', error);
         // Fallback to memory blacklist
@@ -161,7 +154,6 @@ class RedisTokenBlacklist {
         if (keys.length > 0) {
           await this.client.del(keys);
         }
-        console.log('Cleared all tokens from blacklist');
       } catch (error) {
         console.error('Failed to clear blacklist in Redis:', error);
         this.fallbackClearBlacklist();
@@ -220,6 +212,13 @@ class RedisTokenBlacklist {
   }
 
   /**
+   * Get the internal Redis client
+   */
+  getRedisClient(): RedisClientType | null {
+    return this.client;
+  }
+
+  /**
    * Disconnect from Redis
    */
   async disconnect(): Promise<void> {
@@ -232,6 +231,7 @@ class RedisTokenBlacklist {
 
 // Export singleton instance
 export const redisTokenBlacklist = new RedisTokenBlacklist();
+export const redisClient = redisTokenBlacklist.getRedisClient();
 
 // Export functions for backward compatibility
 export const blacklistToken = (token: string, expiresAt?: number) => 

@@ -40,12 +40,13 @@ export function parseAllowedOrigins(rawOrigins = process.env.ALLOWED_ORIGINS): s
   const sanitizedOrigins = sanitizeEnvValue(rawOrigins);
   if (!sanitizedOrigins) {
     if (process.env.NODE_ENV === 'development') {
-      return ['http://localhost:5173', 'http://localhost:3000'];
+      return ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:3001'];
     }
 
-    // Robust Fallback: Default to known production domains if config is missing in production to prevent breaking CORS
-    console.warn('Warning: ALLOWED_ORIGINS is not configured in production. Falling back to default production domains.');
-    return ['https://cngbharat.com', 'https://www.cngbharat.com', 'https://cngmain.netlify.app'];
+    // SECURITY FIX: Fail-fast in production instead of fallback
+    // This prevents CORS bypass if config is missing
+    console.error('CRITICAL: ALLOWED_ORIGINS is not configured in production. CORS will be restricted.');
+    throw new Error('ALLOWED_ORIGINS environment variable is required in production');
   }
 
   const normalizedOrigins = sanitizedOrigins
@@ -53,11 +54,14 @@ export function parseAllowedOrigins(rawOrigins = process.env.ALLOWED_ORIGINS): s
     .map((origin) => normalizeOrigin(origin))
     .filter(Boolean) as string[];
 
-  // SECURITY/FUNCTIONAL FIX: Wildcard CORS (*) is not allowed in production with credentials (cookies) enabled.
-  // Instead of blocking all origins, we fall back to the safe, known production domains.
+  // SECURITY FIX: Reject wildcard in production entirely
   if (process.env.NODE_ENV === 'production' && normalizedOrigins.includes('*')) {
-    console.warn('Warning: Wildcard CORS (*) is not allowed in production with credentials enabled. Falling back to default production domains.');
-    return ['https://cngbharat.com', 'https://www.cngbharat.com', 'https://cngmain.netlify.app'];
+    console.error('CRITICAL: Wildcard CORS (*) is not allowed in production with credentials enabled.');
+    throw new Error('Wildcard CORS is not allowed in production. Please specify exact origins.');
+  }
+
+  if (normalizedOrigins.length === 0) {
+    throw new Error('No valid origins configured in ALLOWED_ORIGINS');
   }
 
   return [...new Set(normalizedOrigins)];

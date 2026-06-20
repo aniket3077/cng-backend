@@ -158,8 +158,8 @@ This backend is configured for deployment on an AWS EC2 instance (Ubuntu) using 
    ```
    Add your database credentials and configurations:
    ```env
-   DATABASE_URL="postgresql://cngbharat2025:99228761@cngbharat.covye08wayvz.us-east-1.rds.amazonaws.com:5432/postgres?sslmode=require"
-   DIRECT_URL="postgresql://cngbharat2025:99228761@cngbharat.covye08wayvz.us-east-1.rds.amazonaws.com:5432/postgres?sslmode=require"
+   DATABASE_URL="postgresql://username:password@db.example.com:5432/postgres?sslmode=require"
+   DIRECT_URL="postgresql://username:password@db.example.com:5432/postgres?sslmode=require"
    JWT_SECRET="your-strong-secret"
    NODE_ENV="production"
    PORT=5000
@@ -168,7 +168,7 @@ This backend is configured for deployment on an AWS EC2 instance (Ubuntu) using 
 5. **Build and Run with PM2**:
    ```bash
    npm run build
-   pm2 start ecosystem.config.js --env production
+   pm2 start ecosystem.config.cjs --env production
    ```
 
 6. **Open Port 5000 in Security Group**:

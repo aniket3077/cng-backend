@@ -354,7 +354,7 @@ export async function OPTIONS() {
 }
 
 export async function POST(request: NextRequest) {
-  const rateLimitResponse = rateLimit(request, rateLimitConfigs.auth, { headers: corsHeaders });
+  const rateLimitResponse = await rateLimit(request, rateLimitConfigs.auth, { headers: corsHeaders });
   if (rateLimitResponse) {
     return rateLimitResponse;
   }

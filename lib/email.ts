@@ -190,3 +190,136 @@ export async function sendPasswordResetOTP(email: string, otp: string): Promise<
     html,
   });
 }
+
+/**
+ * Send email when withdrawal request is submitted
+ */
+export async function sendWithdrawalSubmittedEmail(
+  email: string,
+  name: string,
+  amount: number,
+  method: string,
+  deadline: Date
+): Promise<boolean> {
+  const formattedDeadline = deadline.toLocaleString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+  
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <title>Withdrawal Request Submitted</title>
+    </head>
+    <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; background-color: #f8fafc; padding: 20px;">
+      <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.05); border: 1px solid #e2e8f0;">
+        <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 30px; text-align: center; color: white;">
+          <h1 style="margin: 0; font-size: 24px;">Withdrawal Submitted</h1>
+        </div>
+        <div style="padding: 30px;">
+          <p>Hi ${name},</p>
+          <p>Your withdrawal request has been successfully submitted and is currently <strong>Pending Review</strong>.</p>
+          <div style="background: #f1f5f9; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <p style="margin: 0 0 10px;"><strong>Amount:</strong> ₹${amount}</p>
+            <p style="margin: 0 0 10px;"><strong>Payment Method:</strong> ${method === 'upi' ? 'UPI' : 'Bank Account'}</p>
+            <p style="margin: 0;"><strong>Estimated Processed By:</strong> ${formattedDeadline}</p>
+          </div>
+          <p>Our team manually reviews and processes all withdrawals within 24 hours. You will receive another notification once your request has been updated.</p>
+          <p style="color: #64748b; font-size: 14px;">If you did not request this withdrawal, please contact our support team immediately.</p>
+        </div>
+        <div style="background: #f8fafc; padding: 20px; text-align: center; font-size: 12px; color: #64748b; border-top: 1px solid #e2e8f0;">
+          <p>&copy; ${new Date().getFullYear()} CNG Bharat. All rights reserved.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  return sendEmail({
+    to: email,
+    subject: `Withdrawal Request Submitted - ₹${amount}`,
+    html,
+  });
+}
+
+/**
+ * Send email when withdrawal request status updates
+ */
+export async function sendWithdrawalStatusEmail(
+  email: string,
+  name: string,
+  amount: number,
+  status: 'processing' | 'paid' | 'rejected',
+  method: string,
+  remarks?: string | null
+): Promise<boolean> {
+  let statusTitle = '';
+  let statusText = '';
+  let statusColor = '';
+  let subject = '';
+
+  if (status === 'processing') {
+    statusTitle = 'Withdrawal Approved';
+    statusText = `Your withdrawal request of ₹${amount} has been approved and is now being processed. It should be credited to your account shortly.`;
+    statusColor = '#3b82f6';
+    subject = `Withdrawal Approved & Processing - ₹${amount}`;
+  } else if (status === 'paid') {
+    statusTitle = 'Withdrawal Completed';
+    statusText = `Congratulations! Your withdrawal request of ₹${amount} has been processed and paid successfully to your ${method === 'upi' ? 'UPI ID' : 'Bank Account'}.`;
+    statusColor = '#10b981';
+    subject = `Withdrawal Paid Successfully - ₹${amount}`;
+  } else {
+    statusTitle = 'Withdrawal Rejected';
+    statusText = `Your withdrawal request of ₹${amount} has been rejected by admin.`;
+    statusColor = '#ef4444';
+    subject = `Withdrawal Request Rejected - ₹${amount}`;
+  }
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <title>${statusTitle}</title>
+    </head>
+    <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; background-color: #f8fafc; padding: 20px;">
+      <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.05); border: 1px solid #e2e8f0;">
+        <div style="background: ${statusColor}; padding: 30px; text-align: center; color: white;">
+          <h1 style="margin: 0; font-size: 24px;">${statusTitle}</h1>
+        </div>
+        <div style="padding: 30px;">
+          <p>Hi ${name},</p>
+          <p>${statusText}</p>
+          
+          <div style="background: #f1f5f9; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <p style="margin: 0 0 10px;"><strong>Amount:</strong> ₹${amount}</p>
+            <p style="margin: 0 0 10px;"><strong>Payment Method:</strong> ${method === 'upi' ? 'UPI' : 'Bank Account'}</p>
+            <p style="margin: 0 0 10px;"><strong>Status:</strong> <span style="color: ${statusColor}; font-weight: bold; text-transform: uppercase;">${status}</span></p>
+            ${remarks ? `<p style="margin: 0;"><strong>Admin Remarks:</strong> ${remarks}</p>` : ''}
+          </div>
+          
+          ${status === 'rejected' ? '<p>The requested amount has been refunded back to your available wallet balance.</p>' : ''}
+          
+          <p>If you have any questions, please contact our support team at support@cngbharat.com.</p>
+        </div>
+        <div style="background: #f8fafc; padding: 20px; text-align: center; font-size: 12px; color: #64748b; border-top: 1px solid #e2e8f0;">
+          <p>&copy; ${new Date().getFullYear()} CNG Bharat. All rights reserved.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  return sendEmail({
+    to: email,
+    subject,
+    html,
+  });
+}
+

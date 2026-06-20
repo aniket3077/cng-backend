@@ -9,19 +9,20 @@ export async function OPTIONS() {
 
 // GET - List all users with filters and pagination
 export async function GET(request: NextRequest) {
+    let admin;
     try {
-        // SECURITY FIX: require a verified admin session for user management.
-        const admin = await requireAdmin(request);
-        if (!admin) {
-            return NextResponse.json(
-                { error: 'Unauthorized' },
-                { status: 401, headers: corsHeaders }
-            );
-        }
+        admin = await requireAdmin(request);
+    } catch {
+        return NextResponse.json(
+            { error: 'Forbidden: admin access required' },
+            { status: 403, headers: corsHeaders }
+        );
+    }
 
+    try {
         const { searchParams } = new URL(request.url);
         const page = parseInt(searchParams.get('page') || '1');
-        const limit = parseInt(searchParams.get('limit') || '20');
+        const limit = Math.min(parseInt(searchParams.get('limit') || '20'), 100);
         const search = searchParams.get('search');
 
         const skip = (page - 1) * limit;
@@ -84,16 +85,17 @@ export async function GET(request: NextRequest) {
 
 // PUT - Update user details (subscription)
 export async function PUT(request: NextRequest) {
+    let admin;
     try {
-        // SECURITY FIX: require a verified admin session before updating users.
-        const admin = await requireAdmin(request);
-        if (!admin) {
-            return NextResponse.json(
-                { error: 'Unauthorized' },
-                { status: 401, headers: corsHeaders }
-            );
-        }
+        admin = await requireAdmin(request);
+    } catch {
+        return NextResponse.json(
+            { error: 'Forbidden: admin access required' },
+            { status: 403, headers: corsHeaders }
+        );
+    }
 
+    try {
         const { searchParams } = new URL(request.url);
         const userId = searchParams.get('id');
 
@@ -138,16 +140,17 @@ export async function PUT(request: NextRequest) {
 
 // DELETE - Delete user
 export async function DELETE(request: NextRequest) {
+    let admin;
     try {
-        // SECURITY FIX: require a verified admin session before deleting users.
-        const admin = await requireAdmin(request);
-        if (!admin) {
-            return NextResponse.json(
-                { error: 'Unauthorized' },
-                { status: 401, headers: corsHeaders }
-            );
-        }
+        admin = await requireAdmin(request);
+    } catch {
+        return NextResponse.json(
+            { error: 'Forbidden: admin access required' },
+            { status: 403, headers: corsHeaders }
+        );
+    }
 
+    try {
         const { searchParams } = new URL(request.url);
         const userId = searchParams.get('id');
 

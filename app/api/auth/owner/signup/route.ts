@@ -10,7 +10,13 @@ const signupSchema = z.object({
   name: z.string().min(2).max(100).trim(),
   email: z.string().email().trim().toLowerCase(),
   phone: z.string().min(10).max(20).regex(/^[0-9+\-\s()]+$/, 'Invalid phone number'),
-  password: z.string().min(6, 'Password must be at least 6 characters').max(100),
+  password: z
+    .string()
+    .min(8, 'Password must be at least 8 characters')
+    .max(100)
+    .regex(/[A-Z]/, 'Password must contain an uppercase letter')
+    .regex(/[a-z]/, 'Password must contain a lowercase letter')
+    .regex(/[0-9]/, 'Password must contain a number'),
   companyName: z.string().max(200).trim().optional(),
   gstNumber: z.string().optional(),
   panNumber: z.string().optional(),
@@ -28,7 +34,7 @@ export async function OPTIONS() {
 
 export async function POST(request: NextRequest) {
   // Apply rate limiting
-  const rateLimitResponse = rateLimit(request, rateLimitConfigs.auth, { headers: corsHeaders });
+  const rateLimitResponse = await rateLimit(request, rateLimitConfigs.auth, { headers: corsHeaders });
   if (rateLimitResponse) {
     return rateLimitResponse;
   }
@@ -65,8 +71,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Hash password
-    const passwordHash = await bcrypt.hash(password, 10);
+    // Hash password with cost factor 12 (same as customer signup)
+    const passwordHash = await bcrypt.hash(password, 12);
 
     // Create station owner
     const owner = await prisma.stationOwner.create({

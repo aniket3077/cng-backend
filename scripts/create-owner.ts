@@ -5,52 +5,58 @@ const prisma = new PrismaClient();
 
 async function createOwner() {
   try {
-    const email = 'owner@cngbharat.com';
-    const password = 'Owner@123';
+    const email = process.env.OWNER_EMAIL?.trim().toLowerCase();
+    const password = process.env.OWNER_PASSWORD;
 
-    // Check if owner already exists
+    if (!email || !password) {
+      console.error('Error: Set OWNER_EMAIL and OWNER_PASSWORD before running this script.');
+      process.exit(1);
+    }
+
+    if (password.length < 12) {
+      console.error('Error: OWNER_PASSWORD must be at least 12 characters.');
+      process.exit(1);
+    }
+
     const existingOwner = await prisma.stationOwner.findUnique({
       where: { email },
     });
 
     if (existingOwner) {
-      console.log('❌ Owner already exists with this email');
+      console.log('Owner already exists with this email.');
       process.exit(1);
     }
 
-    // Hash password
-    const passwordHash = await bcrypt.hash(password, 10);
+    const passwordHash = await bcrypt.hash(password, 12);
 
-    // Create owner
     const owner = await prisma.stationOwner.create({
       data: {
         email,
         passwordHash,
-        name: 'Test Station Owner',
-        phone: '+919876543210',
-        companyName: 'Test CNG Station',
-        gstNumber: '29ABCDE1234F1Z5',
-        panNumber: 'ABCDE1234F',
-        address: '123 Test Street',
-        city: 'Mumbai',
-        state: 'Maharashtra',
-        postalCode: '400001',
+        name: process.env.OWNER_NAME || 'Station Owner',
+        phone: process.env.OWNER_PHONE || '',
+        companyName: process.env.OWNER_COMPANY_NAME || null,
+        gstNumber: process.env.OWNER_GST_NUMBER || null,
+        panNumber: process.env.OWNER_PAN_NUMBER || null,
+        address: process.env.OWNER_ADDRESS || null,
+        city: process.env.OWNER_CITY || null,
+        state: process.env.OWNER_STATE || null,
+        postalCode: process.env.OWNER_POSTAL_CODE || null,
         status: 'active',
         emailVerified: true,
-        phoneVerified: true,
+        phoneVerified: Boolean(process.env.OWNER_PHONE),
         kycStatus: 'approved',
         profileComplete: true,
         onboardingStep: 5,
       },
     });
 
-    console.log('✅ Station owner created successfully!');
+    console.log('Station owner created successfully.');
     console.log(`Email: ${email}`);
-    console.log(`Password: ${password}`);
     console.log(`Owner ID: ${owner.id}`);
-    console.log('\n⚠️  Please change the password after first login!');
+    console.log('Password was read from env var and is not logged for security.');
   } catch (error) {
-    console.error('❌ Error creating owner:', error);
+    console.error('Error creating owner:', error);
     process.exit(1);
   } finally {
     await prisma.$disconnect();

@@ -4,6 +4,7 @@ import { corsHeaders } from '@/lib/api-utils';
 import { JWTPayload, signJwt, signRefreshToken } from '@/lib/auth';
 import { JWT_REFRESH_SECRET } from '@/lib/env';
 import { prisma } from '@/lib/prisma';
+import { isTokenBlacklisted } from '@/lib/redis-token-blacklist';
 
 export async function OPTIONS() {
   return NextResponse.json({}, { headers: corsHeaders });
@@ -18,6 +19,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: 'Refresh token is required' },
         { status: 400, headers: corsHeaders },
+      );
+    }
+
+    // SECURITY FIX (H7): reject blacklisted refresh tokens to prevent reuse after logout
+    if (await isTokenBlacklisted(refreshToken)) {
+      return NextResponse.json(
+        { error: 'Token has been revoked' },
+        { status: 401, headers: corsHeaders },
       );
     }
 
