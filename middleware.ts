@@ -59,7 +59,7 @@ export function middleware(request: NextRequest) {
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: https:",
       "font-src 'self' data:",
-      "connect-src 'self' https://api.cngbharat.com https://maps.googleapis.com",
+      "connect-src 'self' https://maps.googleapis.com https://api.razorpay.com",
       "frame-ancestors 'none'",
     ].join('; ')
   );
