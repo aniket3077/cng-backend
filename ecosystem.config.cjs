@@ -1,3 +1,4 @@
+
 // PM2 Ecosystem Configuration for AWS EC2
 module.exports = {
   apps: [
@@ -37,7 +38,7 @@ module.exports = {
       path: '/home/ubuntu/cng-backend',
       'pre-deploy-local': '',
       'post-deploy':
-        'npm install && npm run build && pm2 reload ecosystem.config.js --env production',
+        'npm install && npm run build && pm2 reload ecosystem.config.cjs --env production',
       'pre-setup': '',
     },
   },
