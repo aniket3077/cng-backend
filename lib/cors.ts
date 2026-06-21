@@ -40,7 +40,7 @@ export function parseAllowedOrigins(rawOrigins = process.env.ALLOWED_ORIGINS): s
   const sanitizedOrigins = sanitizeEnvValue(rawOrigins);
   if (!sanitizedOrigins) {
     if (process.env.NODE_ENV === 'development') {
-      return ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:3001'];
+      return [];
     }
 
     // SECURITY FIX: Fail-fast in production instead of fallback

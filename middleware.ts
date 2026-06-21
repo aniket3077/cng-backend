@@ -2,10 +2,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { getCorsHeaders } from '@/lib/cors';
 
-/**
- * Security and CORS Middleware - Triggered reload
- * Adds essential security headers and CORS policy to responses
- */
+
 export function middleware(request: NextRequest) {
   const url = request.nextUrl;
   const origin = request.headers.get('origin');
@@ -41,7 +38,7 @@ export function middleware(request: NextRequest) {
   response.headers.set('X-Frame-Options', 'DENY');
   response.headers.set('X-XSS-Protection', '1; mode=block');
   response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
-  
+
   // HSTS - Force HTTPS for 1 year
   if (process.env.NODE_ENV === 'production') {
     response.headers.set(
