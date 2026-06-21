@@ -67,6 +67,7 @@ export function parseAllowedOrigins(rawOrigins = process.env.ALLOWED_ORIGINS): s
   return [...new Set(normalizedOrigins)];
 }
 
+// Trigger recompilation on allowed origins change
 export const ALLOWED_ORIGINS = parseAllowedOrigins();
 
 const ALLOW_ALL_ORIGINS = ALLOWED_ORIGINS.includes('*');
@@ -74,7 +75,7 @@ const DEFAULT_ALLOWED_ORIGIN = ALLOW_ALL_ORIGINS ? '*' : ALLOWED_ORIGINS[0] || '
 
 export const CORS_BASE_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Client-Platform, X-Device-Fingerprint, X-Idempotency-Key, X-Request-Id, X-Request-Timestamp, X-Request-Signature',
   'Access-Control-Allow-Credentials': 'true',
   'Access-Control-Max-Age': '86400',
 };

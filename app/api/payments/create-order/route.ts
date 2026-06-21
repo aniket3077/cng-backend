@@ -5,7 +5,13 @@ import { requireAuth } from '@/lib/auth';
 import { RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET } from '@/lib/env';
 import { getPlanConfig } from '@/lib/subscription';
 
-const razorpay = (RAZORPAY_KEY_ID && RAZORPAY_KEY_SECRET)
+const isRazorpayConfigured =
+    RAZORPAY_KEY_ID &&
+    RAZORPAY_KEY_SECRET &&
+    RAZORPAY_KEY_ID !== 'REPLACE_WITH_NEW_KEY_ID' &&
+    RAZORPAY_KEY_SECRET !== 'REPLACE_WITH_NEW_KEY_SECRET';
+
+const razorpay = isRazorpayConfigured
     ? new Razorpay({
         key_id: RAZORPAY_KEY_ID,
         key_secret: RAZORPAY_KEY_SECRET,
@@ -76,6 +82,24 @@ export async function POST(request: NextRequest) {
         };
 
         if (!razorpay) {
+            if (process.env.NODE_ENV === 'development') {
+                return NextResponse.json(
+                    {
+                        success: true,
+                        orderId: `order_dev_sim_${Date.now()}`,
+                        amount: Math.round(parseFloat(amount) * 100),
+                        currency: 'INR',
+                        keyId: 'rzp_test_dev_simulated',
+                        plan: {
+                            id: plan.id,
+                            name: plan.name,
+                            price: plan.price,
+                            cashbackHighlight: plan.cashbackHighlight,
+                        },
+                    },
+                    { status: 200, headers: corsHeaders }
+                );
+            }
             throw new Error('Razorpay credentials not configured');
         }
 

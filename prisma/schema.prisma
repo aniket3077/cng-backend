@@ -39,6 +39,7 @@ model User {
   savedPayoutMethods  SavedPayoutMethod[]
   payoutOtps          PayoutOtp[]
   withdrawals         Withdrawal[]
+  supportTickets      SupportTicket[]
   
   @@index([email])
   @@index([referralCode])
@@ -206,6 +207,7 @@ model SupportTicket {
   priority      String        @default("medium")
   status        String        @default("open")
   ownerId       String?
+  userId        String?
   stationId     String?
   assignedTo    String?
   resolution    String?
@@ -214,10 +216,12 @@ model SupportTicket {
   updatedAt     DateTime      @updatedAt
   
   owner         StationOwner? @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+  user          User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
   station       Station?      @relation(fields: [stationId], references: [id], onDelete: SetNull)
   replies       TicketReply[]
   
   @@index([ownerId])
+  @@index([userId])
   @@index([stationId])
   @@index([status])
   @@index([assignedTo])

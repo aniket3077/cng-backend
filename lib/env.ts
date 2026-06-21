@@ -69,6 +69,41 @@ function validateEnv(): EnvConfig {
     }
   }
 
+  // Validate Razorpay webhook secret in production
+  if (process.env.NODE_ENV === 'production') {
+    const webhookSecret = sanitizeEnvValue(process.env.RAZORPAY_WEBHOOK_SECRET);
+    if (!webhookSecret || webhookSecret === 'your_webhook_secret_here') {
+      throw new Error('RAZORPAY_WEBHOOK_SECRET must be configured in production');
+    }
+  }
+
+  // Validate Redis URL in production
+  if (process.env.NODE_ENV === 'production') {
+    const redisUrl = sanitizeEnvValue(process.env.REDIS_URL);
+    if (!redisUrl) {
+      console.error('⚠️  WARNING: REDIS_URL not configured. Rate limiting will be per-instance only.');
+    }
+  }
+
+  // Validate ALLOWED_ORIGINS
+  if (process.env.NODE_ENV === 'production') {
+    const origins = parseAllowedOrigins(process.env.ALLOWED_ORIGINS);
+    if (origins.includes('*')) {
+      throw new Error('Wildcard CORS is not allowed in production');
+    }
+    if (origins.some(o => o.includes('localhost'))) {
+      throw new Error('Localhost origins not allowed in production');
+    }
+  }
+
+  // Validate Google Maps API Key in production
+  if (process.env.NODE_ENV === 'production') {
+    const mapsKey = sanitizeEnvValue(process.env.GOOGLE_MAPS_API_KEY);
+    if (!mapsKey || mapsKey.startsWith('REPLACE_') || mapsKey === 'your-google-maps-api-key') {
+      console.warn('⚠️  WARNING: GOOGLE_MAPS_API_KEY not configured or using default/placeholder value.');
+    }
+  }
+
   return {
     JWT_SECRET: jwtSecret,
     JWT_REFRESH_SECRET: sanitizeEnvValue(process.env.JWT_REFRESH_SECRET) || jwtSecret,

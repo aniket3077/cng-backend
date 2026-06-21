@@ -55,6 +55,14 @@ export async function GET(request: NextRequest) {
               companyName: true,
             },
           },
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              phone: true,
+            },
+          },
           station: {
             select: {
               id: true,
@@ -144,6 +152,13 @@ export async function PUT(request: NextRequest) {
       data: updateData,
       include: {
         owner: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+        user: {
           select: {
             id: true,
             name: true,

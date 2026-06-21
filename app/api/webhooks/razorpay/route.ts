@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { activateSubscription } from '@/lib/subscription-activation';
 import crypto from 'crypto';
+import { rateLimit } from '@/lib/rate-limit';
 
 /**
  * Razorpay Webhook Handler
@@ -18,6 +19,19 @@ import crypto from 'crypto';
  */
 
 export async function POST(request: NextRequest) {
+  // Add rate limiting
+  const rateLimitResponse = await rateLimit(request, {
+    windowMs: 60 * 1000, // 1 minute
+    maxRequests: 30, // Max 30 webhook calls per minute
+  }, {
+    identifier: 'webhook:razorpay', // Global limit for webhook endpoint
+    errorMessage: 'Webhook rate limit exceeded. Please try again later.',
+  });
+  
+  if (rateLimitResponse) {
+    return rateLimitResponse;
+  }
+
   try {
     // Get webhook signature from headers
     const webhookSignature = request.headers.get('x-razorpay-signature');
@@ -73,12 +87,14 @@ export async function POST(request: NextRequest) {
     const paymentEntity = payload.payload?.payment?.entity;
 
     // Log webhook event
-    console.log('Razorpay webhook received:', {
-      event,
-      orderId: paymentEntity?.order_id,
-      paymentId: paymentEntity?.id,
-      status: paymentEntity?.status,
-    });
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('Razorpay webhook received:', {
+        event,
+        orderId: paymentEntity?.order_id,
+        paymentId: paymentEntity?.id,
+        status: paymentEntity?.status,
+      });
+    }
 
     // Handle payment.captured event (payment successful)
     if (event === 'payment.captured' && paymentEntity) {
@@ -110,7 +126,9 @@ export async function POST(request: NextRequest) {
 
       // Check if payment already processed
       if (paymentRecord.status === 'success') {
-        console.log('Payment already processed:', razorpayOrderId);
+        if (process.env.NODE_ENV !== 'production') {
+          console.log('Payment already processed:', razorpayOrderId);
+        }
         return NextResponse.json({
           received: true,
           message: 'Payment already processed',
@@ -134,12 +152,14 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      console.log('Subscription activated successfully:', {
-        ownerId: paymentRecord.ownerId,
-        ownerEmail: paymentRecord.owner.email,
-        planId: paymentRecord.planId,
-        orderId: razorpayOrderId,
-      });
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('Subscription activated successfully:', {
+          ownerId: paymentRecord.ownerId,
+          ownerEmail: paymentRecord.owner.email,
+          planId: paymentRecord.planId,
+          orderId: razorpayOrderId,
+        });
+      }
 
       return NextResponse.json({
         received: true,
@@ -150,7 +170,9 @@ export async function POST(request: NextRequest) {
 
     // Handle payment.authorized event (for debugging)
     if (event === 'payment.authorized') {
-      console.log('Payment authorized (waiting for capture):', paymentEntity?.id);
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('Payment authorized (waiting for capture):', paymentEntity?.id);
+      }
       return NextResponse.json({
         received: true,
         message: 'Payment authorized',
@@ -173,7 +195,9 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      console.log('Payment failed:', razorpayOrderId);
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('Payment failed:', razorpayOrderId);
+      }
       
       return NextResponse.json({
         received: true,

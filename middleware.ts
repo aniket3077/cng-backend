@@ -1,12 +1,40 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { getCorsHeaders } from '@/lib/cors';
 
 /**
- * Security Headers Middleware
- * Adds essential security headers to all responses
+ * Security and CORS Middleware - Triggered reload
+ * Adds essential security headers and CORS policy to responses
  */
 export function middleware(request: NextRequest) {
+  const url = request.nextUrl;
+  const origin = request.headers.get('origin');
+  const isApi = url.pathname.startsWith('/api/');
+
+  // Handle preflight OPTIONS requests for API routes
+  if (isApi && request.method === 'OPTIONS') {
+    const cors = getCorsHeaders(origin);
+    return new NextResponse(null, {
+      status: 200,
+      headers: {
+        ...cors,
+        'X-Content-Type-Options': 'nosniff',
+        'X-Frame-Options': 'DENY',
+        'X-XSS-Protection': '1; mode=block',
+        'Referrer-Policy': 'strict-origin-when-cross-origin',
+      },
+    });
+  }
+
   const response = NextResponse.next();
+
+  // If it's an API route, dynamically apply the CORS headers
+  if (isApi) {
+    const cors = getCorsHeaders(origin);
+    Object.entries(cors).forEach(([key, val]) => {
+      response.headers.set(key, val);
+    });
+  }
 
   // Security Headers
   response.headers.set('X-Content-Type-Options', 'nosniff');

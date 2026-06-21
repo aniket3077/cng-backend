@@ -24,8 +24,8 @@ const signupSchema = z.object({
   address: z.string().max(500).trim().optional(),
   city: z.string().max(100).trim().optional(),
   state: z.string().max(100).trim().optional(),
-  lat: z.number().min(-90).max(90).optional(),
-  lng: z.number().min(-180).max(180).optional(),
+  lat: z.number().min(-90).max(90).nullable().optional(),
+  lng: z.number().min(-180).max(180).nullable().optional(),
 });
 
 export async function OPTIONS() {
@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
 
     // Create station if details provided
     let station = null;
-    if (stationName && address && city && state && lat && lng) {
+    if (stationName && address && city && state && typeof lat === 'number' && typeof lng === 'number') {
       station = await prisma.station.create({
         data: {
           name: stationName,
