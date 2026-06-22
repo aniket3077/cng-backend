@@ -5,7 +5,7 @@ module.exports = {
     {
       name: 'cngbharat-backend',
       script: 'node_modules/next/dist/bin/next',
-      args: 'start -p 5000',
+      args: 'start -p 5000 -H 127.0.0.1',
       cwd: '/home/ubuntu/cng-backend',
       instances: 1,
       exec_mode: 'cluster',

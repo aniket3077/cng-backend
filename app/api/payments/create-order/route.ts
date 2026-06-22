@@ -129,9 +129,10 @@ export async function POST(request: NextRequest) {
             { status: 200, headers: corsHeaders }
         );
 
-    } catch (_error) {
+    } catch (_error: any) {
+        console.error('Payment order creation error:', _error);
         return NextResponse.json(
-            { error: 'Internal server error' },
+            { error: _error?.message || 'Internal server error' },
             { status: 500, headers: corsHeaders }
         );
     }
