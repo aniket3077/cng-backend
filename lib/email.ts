@@ -27,6 +27,7 @@ export async function sendEmail({ to, subject, html }: EmailOptions): Promise<bo
     });
     return true;
   } catch (error) {
+    console.error('Failed to send email via Resend:', error);
     return false;
   }
 }
